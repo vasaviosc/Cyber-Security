@@ -1,8 +1,9 @@
 import json
 import logging
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Any
 
 from openballot.ballot import Ballot
 from openballot.block import Block
@@ -21,6 +22,7 @@ class NodeServer(HTTPServer):
         self.consensus = ConsensusEngine(ledger=self.ledger, difficulty=difficulty)
         self.difficulty = difficulty
         self.peers: List[str] = []
+        self.state_lock = threading.RLock()
         if not self.ledger.chain:
             self.ledger.create_genesis_block()
 
@@ -38,7 +40,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_json(self) -> Optional[Dict[str, Any]]:
+    def _read_json(self) -> Optional[Any]:
         try:
             content_len = int(self.headers.get("Content-Length", 0))
             if content_len == 0:
@@ -89,9 +91,14 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         if data is None:
             return self._send_json({"error": "Invalid JSON payload"}, 400)
+        if not isinstance(data, dict):
+            return self._send_json({"error": "JSON payload must be an object"}, 400)
 
         if path == "/api/v1/ballots":
-            ballot = Ballot.from_dict(data)
+            try:
+                ballot = Ballot.from_dict(data)
+            except (AttributeError, TypeError, ValueError):
+                return self._send_json({"error": "Invalid ballot format"}, 400)
 
             if not ballot.voter_id or not ballot.proposal_id or not ballot.choice:
                 return self._send_json({"error": "Missing required ballot fields"}, 400)
@@ -101,26 +108,28 @@ class NodeHandler(BaseHTTPRequestHandler):
                 return self._send_json({"error": "Cryptographic signature verification failed"}, 401)
 
             # 2. Verify voter registration (case-insensitive whitelist)
-            if not self.node.ledger.is_registered(ballot.voter_id.lower()):
-                return self._send_json({"error": "Voter ID not in authorized voter registry"}, 403)
+            with self.node.state_lock:
+                if not self.node.ledger.is_registered(ballot.voter_id):
+                    return self._send_json({"error": "Voter ID not in authorized voter registry"}, 403)
 
-            # 3. Check if voter already cast ballot on confirmed ledger
-            if self.node.ledger.has_voted(ballot.proposal_id, ballot.voter_id):
-                return self._send_json({"error": "Voter has already cast a ballot for this proposal"}, 409)
+                if self.node.ledger.has_voted(ballot.proposal_id, ballot.voter_id):
+                    return self._send_json({"error": "Voter has already cast a ballot for this proposal"}, 409)
 
-            # Ingest ballot into mempool
-            self.node.mempool.add(ballot)
+                if not self.node.mempool.add(ballot):
+                    return self._send_json({"error": "Voter already has a pending ballot for this proposal"}, 409)
+
             return self._send_json({"status": "accepted", "proposal": ballot.proposal_id}, 202)
 
         elif path == "/api/v1/mine":
-            pending = self.node.mempool.drain()
-            new_block = Block(
-                index=len(self.node.ledger.chain),
-                prev_hash=self.node.ledger.chain[-1].hash,
-                ballots=pending
-            )
-            new_block.mine(difficulty=self.node.difficulty)
-            self.node.ledger.chain.append(new_block)
+            with self.node.state_lock:
+                pending = self.node.mempool.drain()
+                new_block = Block(
+                    index=len(self.node.ledger.chain),
+                    prev_hash=self.node.ledger.chain[-1].hash,
+                    ballots=pending
+                )
+                new_block.mine(difficulty=self.node.difficulty)
+                self.node.ledger.chain.append(new_block)
             return self._send_json({
                 "status": "mined",
                 "block_index": new_block.index,
@@ -144,7 +153,14 @@ class NodeHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send_json({"error": f"Invalid block format: {e}"}, 400)
 
-            replaced = self.node.consensus.resolve_conflicts([candidate])
+            with self.node.state_lock:
+                replaced = self.node.consensus.resolve_conflicts([candidate])
+                if replaced:
+                    self.node.mempool.retain(
+                        lambda ballot: not self.node.ledger.has_voted(
+                            ballot.proposal_id, ballot.voter_id
+                        )
+                    )
             return self._send_json({
                 "chain_replaced": replaced,
                 "current_length": len(self.node.ledger.chain)

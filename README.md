@@ -45,6 +45,8 @@ OpenBallot implements a decentralized ledger tailored specifically for balloting
 - **Zero Heavy Dependencies**: Built on top of Python's standard HTTP libraries and `cryptography`.
 - **Developer CLI**: Full command-line client for key generation, vote casting, mining, and tally verification.
 
+Ballots use the versioned `openballot:ballot:v1` signing payload, which binds the voter public key, proposal ID, choice, and weight. Signatures created with the previous payload format are not compatible and must be recreated by the voter.
+
 ---
 
 ## Getting Started

@@ -1,4 +1,5 @@
 import hashlib
+import json
 from typing import Dict, Any, Optional
 from openballot.crypto import verify_signature, public_key_from_hex
 
@@ -12,10 +13,20 @@ class Ballot:
         self.weight = int(weight)
 
     def get_digest(self) -> bytes:
-        # Serialized data to sign
-        # Note: proposal binding handled at routing layer
-        payload = f"{self.voter_id}:{self.choice}:{self.weight}"
-        return hashlib.sha256(payload.encode("utf-8")).digest()
+        payload = {
+            "domain": "openballot:ballot:v1",
+            "voter_id": self.voter_id.lower(),
+            "proposal_id": self.proposal_id,
+            "choice": self.choice,
+            "weight": self.weight,
+        }
+        canonical_payload = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(canonical_payload.encode("utf-8")).digest()
 
     def verify(self) -> bool:
         if not self.signature or not self.voter_id:

@@ -32,9 +32,13 @@ class Ledger:
         return voter_id.strip().lower() in self.voter_registry
 
     def has_voted(self, proposal_id: str, voter_id: str) -> bool:
+        canonical_voter_id = voter_id.strip().lower()
         for block in self.chain:
             for ballot in block.ballots:
-                if ballot.proposal_id == proposal_id and ballot.voter_id == voter_id:
+                if (
+                    ballot.proposal_id == proposal_id
+                    and ballot.voter_id.lower() == canonical_voter_id
+                ):
                     return True
         return False
 
