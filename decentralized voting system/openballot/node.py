@@ -364,12 +364,13 @@ class NodeHandler(BaseHTTPRequestHandler):
         elif path == "/api/v1/citizens":
             citizens_data = []
             proposals = self.node.ledger.get_proposals() or [e["proposal_id"] for e in election_manager.get_all()]
-            for c in citizen_manager.get_all(include_secrets=True):
+            for c in citizen_manager.get_all(include_secrets=False):
                 vid = c["voter_id"]
                 voted_props = [p for p in proposals if self.node.ledger.has_voted(p, vid)]
                 pending_props = [b.proposal_id for b in self.node.mempool.all() if b.voter_id.lower() == vid.lower()]
+                c_clean = {k: v for k, v in c.items() if k != "secret_key"}
                 citizens_data.append({
-                    **c,
+                    **c_clean,
                     "voter_id_short": f"{vid[:8]}...{vid[-6:]}",
                     "authorized": self.node.ledger.is_registered(vid),
                     "voted_proposals": voted_props,
@@ -659,7 +660,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             })
             return self._send_json({
                 "status": "created",
-                "citizen": citizen.to_dict(include_secret=True)
+                "citizen": citizen.to_dict(include_secret=False)
             }, 201)
 
         # Bulk citizen generation for scalable election simulations
@@ -683,7 +684,7 @@ class NodeHandler(BaseHTTPRequestHandler):
                 dist = district if (district and district != "Random") else random.choice(constituencies)
                 c = citizen_manager.create_citizen(name=citizen_name, district=dist)
                 self.node.ledger.register_voter(c.voter_id)
-                created.append(c.to_dict(include_secret=True))
+                created.append(c.to_dict(include_secret=False))
 
             audit_log.log("CITIZENS_BULK_GENERATED", f"Generated and whitelisted {len(created)} dynamic citizens", "SUCCESS")
             return self._send_json({

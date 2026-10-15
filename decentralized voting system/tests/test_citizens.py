@@ -36,7 +36,7 @@ def test_api_create_and_list_citizen(running_server):
         assert data["citizen"]["name"] == "Elena Rostova"
         assert data["citizen"]["district"] == "Physics Ward"
         assert len(data["citizen"]["voter_id"]) == 64
-        assert len(data["citizen"]["secret_key"]) == 64
+        assert "secret_key" not in data["citizen"]
         voter_id = data["citizen"]["voter_id"]
 
     # Verify citizen was automatically whitelisted in ledger
@@ -51,6 +51,8 @@ def test_api_create_and_list_citizen(running_server):
         matches = [c for c in get_data["citizens"] if c["voter_id"] == voter_id]
         assert len(matches) == 1
         assert matches[0]["authorized"] is True
+        for c in get_data["citizens"]:
+            assert "secret_key" not in c
 
 
 def test_api_bulk_citizen_generation(running_server):

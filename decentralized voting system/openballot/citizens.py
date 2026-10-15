@@ -20,7 +20,7 @@ class Citizen:
         self.secret_key = secret_key.strip() if secret_key else None
         self.registered_at = registered_at or time.time()
 
-    def to_dict(self, include_secret: bool = True) -> Dict[str, Any]:
+    def to_dict(self, include_secret: bool = False) -> Dict[str, Any]:
         data = {
             "name": self.name,
             "voter_id": self.voter_id,
@@ -41,7 +41,7 @@ class CitizenManager:
         self._citizens: Dict[str, Citizen] = {}
         self.persistence_file = persistence_file
 
-    def get_all(self, include_secrets: bool = True) -> List[Dict[str, Any]]:
+    def get_all(self, include_secrets: bool = False) -> List[Dict[str, Any]]:
         return [c.to_dict(include_secret=include_secrets) for c in self._citizens.values()]
 
     def get(self, voter_id: str) -> Optional[Citizen]:
