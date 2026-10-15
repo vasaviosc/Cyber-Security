@@ -1,5 +1,5 @@
 import hashlib
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from openballot.crypto import verify_signature, public_key_from_hex
 
 
@@ -9,12 +9,16 @@ class Ballot:
         self.proposal_id = proposal_id.strip()
         self.choice = choice.strip()
         self.signature = signature.strip()
-        self.weight = int(weight)
+        w = int(weight)
+        if w < 1:
+            raise ValueError("Vote weight must be a positive integer (minimum 1)")
+        if w > 100:
+            raise ValueError("Vote weight exceeds maximum authorized threshold")
+        self.weight = w
 
     def get_digest(self) -> bytes:
-        # Serialized data to sign
-        # Note: proposal binding handled at routing layer
-        payload = f"{self.voter_id}:{self.choice}:{self.weight}"
+        # Cryptographically binds voter_id, proposal_id, choice, and weight
+        payload = f"{self.voter_id.lower()}:{self.proposal_id}:{self.choice}:{self.weight}"
         return hashlib.sha256(payload.encode("utf-8")).digest()
 
     def verify(self) -> bool:
@@ -27,13 +31,19 @@ class Ballot:
         except Exception:
             return False
 
+    @property
+    def receipt_hash(self) -> str:
+        payload = f"{self.voter_id.lower()}:{self.proposal_id}:{self.signature}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "voter_id": self.voter_id,
             "proposal_id": self.proposal_id,
             "choice": self.choice,
             "signature": self.signature,
-            "weight": self.weight
+            "weight": self.weight,
+            "receipt_hash": self.receipt_hash
         }
 
     @classmethod

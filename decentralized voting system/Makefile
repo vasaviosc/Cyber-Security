@@ -1,13 +1,33 @@
-.PHONY: test serve demo clean keygen
+.PHONY: test serve demo demo-large citizen-add citizens mine tally status clean
+
+PYTHON ?= python
 
 test:
 	pytest -v
 
 serve:
-	python3 -m openballot.cli serve --port 8000 --difficulty 1
+	$(PYTHON) -m openballot.cli serve --port 8000 --difficulty 1
 
 demo:
-	python3 scripts/setup_election.py
+	$(PYTHON) scripts/setup_election.py --count 5
+
+demo-large:
+	$(PYTHON) scripts/setup_election.py --count 10
+
+citizen-add:
+	$(PYTHON) -m openballot.cli citizen-create --name "Marcus Aurelius" --district "Capitol District"
+
+citizens:
+	$(PYTHON) -m openballot.cli citizen-list
+
+mine:
+	$(PYTHON) -m openballot.cli mine
+
+tally:
+	$(PYTHON) -m openballot.cli tally --proposal PROP-2026-01
+
+status:
+	$(PYTHON) -m openballot.cli status
 
 clean:
-	rm -rf __pycache__ */__pycache__ .pytest_cache *.json
+	$(PYTHON) -c "import shutil, glob, os; [shutil.rmtree(p, ignore_errors=True) for p in glob.glob('**/__pycache__', recursive=True) + ['.pytest_cache']]"

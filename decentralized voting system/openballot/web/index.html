@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenBallot | Decentralized Cryptographic Voting System</title>
+  <meta name="description" content="Official digital voting node powered by tamper-evident blockchain ledger and Ed25519 cryptographic signatures.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- Official Top Bar -->
+  <div class="official-banner">
+    <span>🇮🇳 भारत निर्वाचन मंच &bull; Bharat Digital Voting Node &bull; Cryptographic EVM 2.0</span>
+    <span id="bannerTimestamp">Standard Time: IST (UTC+05:30)</span>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-inner">
+      <a href="#" class="brand-group" id="brandLogoLink">
+        <div class="brand-logo-icon">🇮🇳</div>
+        <div class="brand-title">
+          <h1>OpenBallot Bharat</h1>
+          <p>Decentralized Cryptographic Voting System &bull; भारत</p>
+        </div>
+      </a>
+
+      <!-- Status Indicators -->
+      <div class="header-status-indicators">
+        <div class="system-badge badge-online" id="headerNodeBadge">
+          <span class="status-dot"></span>
+          <span>Node: <strong>ONLINE</strong></span>
+        </div>
+        <div class="system-badge badge-valid" id="headerChainBadge">
+          <span class="status-dot"></span>
+          <span>Blockchain: <strong>VALID</strong></span>
+        </div>
+        <button id="btnQuickRefresh" class="btn btn-secondary btn-sm" title="Refresh state from backend">
+          🔄 Refresh
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Navigation Bar -->
+  <nav class="main-nav" aria-label="Main Navigation">
+    <div class="nav-inner" role="tablist">
+      <button class="nav-link active" data-tab="tab-dashboard" id="nav-dashboard">Dashboard</button>
+      <button class="nav-link" data-tab="tab-elections" id="nav-elections">Elections</button>
+      <button class="nav-link" data-tab="tab-cast-vote" id="nav-cast-vote">Cast Vote</button>
+      <button class="nav-link" data-tab="tab-verify-vote" id="nav-verify-vote">Verify Vote</button>
+      <button class="nav-link" data-tab="tab-blockchain" id="nav-blockchain">Blockchain</button>
+      <button class="nav-link" data-tab="tab-network" id="nav-network">Network</button>
+      <button class="nav-link" data-tab="tab-mempool" id="nav-mempool">Mempool (<span id="mempoolNavCount">0</span>)</button>
+      <button class="nav-link" data-tab="tab-results" id="nav-results">Results</button>
+      <button class="nav-link" data-tab="tab-audit-log" id="nav-audit-log">Audit Log</button>
+      <button class="nav-link" data-tab="tab-voters" id="nav-voters">Voter Registry</button>
+      <button class="nav-link" data-tab="tab-security" id="nav-security">Security Info</button>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="main-container">
+
+    <!-- Privacy & Transparency Banner -->
+    <aside class="privacy-banner" role="note">
+      <span class="privacy-banner-icon">ℹ️</span>
+      <div>
+        <strong>Cryptographic Authenticity & Transparency Notice:</strong>
+        OpenBallot currently provides cryptographic authenticity and tamper evidence. Ballots are not anonymous because the voter's authorized public-key ID is stored together with the ballot on the verifiable blockchain ledger.
+      </div>
+    </aside>
+
+    <!-- =========================================================================
+         TAB 1: DASHBOARD
+         ========================================================================= -->
+    <section id="tab-dashboard" class="page-tab-pane active">
+      <div class="page-header">
+        <div>
+          <h2>System Dashboard</h2>
+          <p>Real-time status of the local OpenBallot voting node and blockchain ledger.</p>
+        </div>
+        <div>
+          <button class="btn btn-primary btn-sm" onclick="navigateToTab('tab-cast-vote')">Go to Voting &rarr;</button>
+        </div>
+      </div>
+
+      <!-- Current Election Banner -->
+      <div class="content-box box-light-blue" style="margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <span class="system-badge badge-online" style="margin-bottom: 6px;">STATUS: ACTIVE</span>
+            <h3 style="font-size: 18px; font-weight: 700; color: #1e3a8a;" id="dashActiveElectionTitle">
+              Lok Sabha Parliamentary Constituency General Election 2026
+            </h3>
+            <p style="font-size: 13px; color: #3b82f6; margin-top: 2px;">
+              Proposal ID: <strong id="dashActiveProposalId">PROP-2026-01</strong> &bull; Standard Single Choice (Weight 1)
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" onclick="openVoteForProposal('PROP-2026-01')">Cast Ballot</button>
+            <button class="btn btn-secondary" onclick="openResultsForProposal('PROP-2026-01')">View Live Tallies</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Confirmed Votes</div>
+          <div class="kpi-value" id="dashTotalVotes">0</div>
+          <div class="kpi-sub">Sealed into blocks</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Pending Mempool Votes</div>
+          <div class="kpi-value" id="dashPendingVotes">0</div>
+          <div class="kpi-sub">Awaiting next block</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Blockchain Height</div>
+          <div class="kpi-value" id="dashChainHeight">1</div>
+          <div class="kpi-sub">Total verified blocks</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Active Nodes / Peers</div>
+          <div class="kpi-value" id="dashActivePeers">0</div>
+          <div class="kpi-sub">Connected in network</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Node Health</div>
+          <div class="kpi-value" style="color: var(--success-green); font-size: 22px; line-height: 1.4;" id="dashNodeHealth">ONLINE</div>
+          <div class="kpi-sub">Port 8000 &bull; PoW Diff: 1</div>
+        </div>
+      </div>
+
+      <!-- Recent Activity Feed -->
+      <div class="content-box">
+        <div class="content-box-header">
+          <h3>Recent Node Activity</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">Real chronological events from audit log</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 120px;">Time</th>
+                <th style="width: 180px;">Event</th>
+                <th>Details</th>
+                <th style="width: 100px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="dashRecentActivityBody">
+              <tr>
+                <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">
+                  Loading activity logs...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 2: ELECTIONS
+         ========================================================================= -->
+    <section id="tab-elections" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Available Elections & Referendums</h2>
+          <p>Official ballot proposals currently registered on the OpenBallot node.</p>
+        </div>
+        <div>
+          <button class="btn btn-primary btn-sm" id="btnOpenNewElectionModal">+ Create Election / Referendum</button>
+        </div>
+      </div>
+
+      <div class="content-box">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Election Name</th>
+                <th>Proposal ID</th>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Votes Count</th>
+                <th>Authorized Choices</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="electionsTableBody">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                  Loading registered elections...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 3: CAST VOTE
+         ========================================================================= -->
+    <section id="tab-cast-vote" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Cast Official Ballot</h2>
+          <p>Step-by-step cryptographic vote authorization and submission.</p>
+        </div>
+      </div>
+
+      <!-- Clean Stepper Indicator -->
+      <div class="stepper">
+        <div class="step-item active" id="stepIndicator1">
+          <span class="step-num">1</span>
+          <span>Select Proposal</span>
+        </div>
+        <div class="step-item" id="stepIndicator2">
+          <span class="step-num">2</span>
+          <span>Select Choice</span>
+        </div>
+        <div class="step-item" id="stepIndicator3">
+          <span class="step-num">3</span>
+          <span>Confirm & Sign</span>
+        </div>
+        <div class="step-item" id="stepIndicator4">
+          <span class="step-num">4</span>
+          <span>Submission Receipt</span>
+        </div>
+      </div>
+
+      <!-- Voting Card Flow -->
+      <div class="content-box" style="max-width: 760px; margin: 0 auto;">
+        
+        <!-- STEP 1 & 2: Form Inputs -->
+        <div id="voteStepForm">
+          <form id="castVoteForm">
+            
+            <!-- Voter Authorization Profile Selection -->
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label class="form-label" for="voterProfileSelect" style="margin-bottom: 0;">
+                  Voter Authorization Profile
+                </label>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnQuickCreateCitizen" style="font-size: 11.5px; padding: 3px 8px;">
+                  + Register New Citizen
+                </button>
+              </div>
+              <select id="voterProfileSelect" class="form-control" style="font-weight: 600;">
+                <option value="">Loading registered citizens...</option>
+              </select>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Select any registered citizen to authorize the ballot with their cryptographic Ed25519 signature.
+              </p>
+            </div>
+
+            <!-- Custom Key Field (Hidden by default) -->
+            <div id="customKeyGroup" style="display: none; margin-bottom: 16px; padding: 12px; background-color: var(--bg-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              <div class="form-group">
+                <label class="form-label" for="inputCustomSecret">Voter Secret Key (64-character Hex)</label>
+                <input type="password" id="inputCustomSecret" class="form-control font-mono" placeholder="Enter private key hex...">
+              </div>
+            </div>
+
+            <!-- Public Voter ID Display (Shortened, Read-Only) -->
+            <div class="form-group">
+              <label class="form-label">Voter Public Key ID</label>
+              <input type="text" id="displayVoterId" class="form-control font-mono" readonly value="Loading...">
+            </div>
+
+            <!-- Proposal Selection -->
+            <div class="form-group">
+              <label class="form-label" for="voteProposalSelect">Step 1: Choose Election / Proposal</label>
+              <select id="voteProposalSelect" class="form-control">
+                <option value="PROP-2026-01">PROP-2026-01: Campus Student Government President Election 2026</option>
+                <option value="PROP-2026-02">PROP-2026-02: University Library 24/7 Extended Hours Referendum</option>
+              </select>
+            </div>
+
+            <!-- Choices Radio Cards -->
+            <div class="form-group">
+              <label class="form-label">Step 2: Choose Your Vote</label>
+              <div class="choice-options">
+                <label class="choice-option selected" id="choiceOptYES">
+                  <input type="radio" name="ballotChoice" value="YES" class="choice-radio" checked>
+                  <div class="choice-label-group">
+                    <span class="choice-name">YES</span>
+                    <span class="choice-desc">Approve and support this proposal</span>
+                  </div>
+                </label>
+
+                <label class="choice-option" id="choiceOptNO">
+                  <input type="radio" name="ballotChoice" value="NO" class="choice-radio">
+                  <div class="choice-label-group">
+                    <span class="choice-name">NO</span>
+                    <span class="choice-desc">Reject and vote against this proposal</span>
+                  </div>
+                </label>
+
+                <label class="choice-option" id="choiceOptABSTAIN">
+                  <input type="radio" name="ballotChoice" value="ABSTAIN" class="choice-radio">
+                  <div class="choice-label-group">
+                    <span class="choice-name">ABSTAIN</span>
+                    <span class="choice-desc">Record participation without choosing either side</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Weight Notice -->
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 18px; padding: 8px 12px; background-color: var(--bg-subtle); border-radius: var(--radius-sm);">
+              <strong>Voting Weight:</strong> Standard weight of <strong>1</strong> is enforced by node protocol consensus.
+            </div>
+
+            <!-- Review Button -->
+            <button type="button" id="btnReviewVote" class="btn btn-primary btn-block" style="padding: 10px;">
+              Review & Sign Ballot &rarr;
+            </button>
+          </form>
+        </div>
+
+        <!-- STEP 3: Confirm & Sign Dialog -->
+        <div id="voteConfirmDialog" style="display: none;">
+          <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">Step 3: Confirm Ballot Details</h3>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            Please review your ballot carefully. Once submitted, your Ed25519 signature will bind your choice to this proposal permanently.
+          </p>
+
+          <div class="table-responsive" style="margin-bottom: 20px;">
+            <table class="data-table">
+              <tbody>
+                <tr>
+                  <th style="width: 140px;">Proposal ID</th>
+                  <td id="confirmProposalId" class="font-mono">PROP-2026-01</td>
+                </tr>
+                <tr>
+                  <th>Election Title</th>
+                  <td id="confirmElectionTitle" style="font-weight: 600;">Campus Student Government 2026</td>
+                </tr>
+                <tr>
+                  <th>Selected Choice</th>
+                  <td><span class="system-badge badge-valid" id="confirmSelectedChoice" style="font-size: 14px; padding: 4px 12px;">YES</span></td>
+                </tr>
+                <tr>
+                  <th>Vote Weight</th>
+                  <td>1 (Standard Authorized Stake)</td>
+                </tr>
+                <tr>
+                  <th>Voter Public ID</th>
+                  <td id="confirmVoterId" class="font-mono" style="word-break: break-all; font-size: 11.5px;">-</td>
+                </tr>
+                <tr>
+                  <th>Deterministic Digest</th>
+                  <td id="confirmDigest" class="font-mono" style="font-size: 11px; color: var(--text-muted);">
+                    <code>voter_id:proposal_id:choice:weight</code>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display: flex; gap: 12px;">
+            <button type="button" id="btnBackToForm" class="btn btn-secondary" style="flex: 1;">&larr; Back / Modify</button>
+            <button type="button" id="btnConfirmSubmit" class="btn btn-primary" style="flex: 2;">
+              🔒 Authorize Digital Signature & Submit
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 4: Success Receipt -->
+        <div id="voteSuccessReceipt" style="display: none;">
+          <div style="text-align: center; padding: 12px 0 20px 0;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background-color: var(--success-bg); color: var(--success-green); display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 10px; border: 2px solid var(--success-border);">
+              ✓
+            </div>
+            <h3 style="font-size: 20px; font-weight: 700; color: #15803d;">Vote Submitted & Authenticated</h3>
+            <p style="font-size: 13.5px; color: var(--text-muted); margin-top: 4px;">
+              Your ballot has been cryptographically signed and queued into the decentralized node mempool.
+            </p>
+          </div>
+
+          <!-- Official Bharat Digital Ballot Certificate -->
+          <div class="receipt-card" style="background: linear-gradient(135deg, #f8fafc, #edf2f7); border: 2px solid #cbd5e1; border-radius: var(--radius-md); padding: 22px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 16px;">
+              <div>
+                <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; color: #475569;">🇮🇳 भारत निर्वाचन मंच &bull; Official Digital Ballot Receipt</span>
+                <h4 style="margin: 3px 0 0 0; font-size: 16px; color: #0f172a;">End-to-End Cryptographic Vote Certificate</h4>
+              </div>
+              <span class="system-badge badge-valid">✓ IMMUTABLE RECEIPT</span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 130px; gap: 16px; align-items: center;">
+              <div>
+                <div style="margin-bottom: 10px;">
+                  <div style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase;">Cryptographic Receipt Hash</div>
+                  <div id="receiptHashVal" class="font-mono" style="font-size: 11.5px; font-weight: 600; color: #1e40af; word-break: break-all; background: #fff; padding: 6px 10px; border-radius: 4px; border: 1px solid #e2e8f0; margin-top: 2px;">-</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12.5px;">
+                  <div><strong>Proposal:</strong> <span id="receiptProposal">-</span></div>
+                  <div><strong>Vote ID:</strong> <span id="receiptVoteId" class="font-mono" style="font-size: 11px;">-</span></div>
+                  <div><strong>Status:</strong> <span class="system-badge badge-warning">⏳ Mempool Staged</span></div>
+                  <div><strong>Signature:</strong> <span class="system-badge badge-valid">✓ Ed25519 Valid</span></div>
+                </div>
+              </div>
+
+              <!-- Real-Time Camera-Scannable QR Code -->
+              <div style="text-align: center;">
+                <div style="background: white; padding: 6px; border-radius: 8px; border: 2px solid #cbd5e1; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.06);">
+                  <img id="receiptQrImage" src="" alt="Live Ballot Audit QR Code" width="130" height="130" style="display: block; border-radius: 4px; image-rendering: pixelated; margin: 0 auto; background: #f8fafc;">
+                </div>
+                <div style="font-size: 11px; font-weight: 700; color: #1e3a8a; margin-top: 6px;">
+                  📱 Scan with Camera
+                </div>
+                <div style="font-size: 9.5px; color: #64748b;" id="qrScanTargetLabel">
+                  Instant mobile verification
+                </div>
+                <button type="button" id="btnToggleQrMode" class="btn btn-secondary btn-sm" style="font-size: 10px; padding: 2px 6px; margin-top: 5px;">
+                  ⇄ Switch to Text QR
+                </button>
+              </div>
+            </div>
+
+            <div style="margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCopyReceiptHash" style="font-size: 12px;">
+                📋 Copy Receipt Hash
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnTrackReceiptNow" style="font-size: 12px;">
+                🔍 Track in Verifier
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnPrintReceipt" style="font-size: 12px;" onclick="window.print()">
+                🖨️ Print Certificate
+              </button>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 12px; justify-content: center;">
+            <button class="btn btn-secondary" onclick="navigateToTab('tab-mempool')">View in Mempool &rarr;</button>
+            <button class="btn btn-primary" onclick="resetVoteForm()">Cast Another Vote</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 4: VERIFY VOTE
+         ========================================================================= -->
+    <section id="tab-verify-vote" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Independent Vote Verification</h2>
+          <p>Verify that your ballot is cryptographically valid, untouched, and recorded on the immutable ledger.</p>
+        </div>
+      </div>
+
+      <div class="content-box" style="max-width: 820px; margin: 0 auto 24px auto;">
+        <form id="verifyVoteForm" style="display: flex; gap: 10px;">
+          <input type="text" id="verifyQueryInput" class="form-control font-mono" placeholder="Enter Voter Public Key ID, Receipt Hash, or Vote Digest ID..." required>
+          <button type="submit" class="btn btn-primary" style="white-space: nowrap;">
+            🔍 Verify Ballot
+          </button>
+        </form>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; flex-wrap: wrap; gap: 8px;">
+          <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+            Quick test with registered citizens: 
+            <a href="#" onclick="setVerifyQuery('aarav'); return false;" style="color: var(--color-blue-primary);">Aarav</a> &bull;
+            <a href="#" onclick="setVerifyQuery('priya'); return false;" style="color: var(--color-blue-primary);">Priya</a> &bull;
+            <a href="#" onclick="setVerifyQuery('rahul'); return false;" style="color: var(--color-blue-primary);">Rahul</a> &bull;
+            <a href="#" onclick="setVerifyQuery('ananya'); return false;" style="color: var(--color-blue-primary);">Ananya</a>
+          </p>
+          <button type="button" id="btnPasteLastReceipt" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px;">
+            📋 Paste My Last Receipt
+          </button>
+        </div>
+
+        <!-- Verification Results Box -->
+        <div id="verifyResultDisplay" style="margin-top: 24px; display: none;"></div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 5: BLOCKCHAIN EXPLORER
+         ========================================================================= -->
+    <section id="tab-blockchain" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Blockchain Ledger Explorer</h2>
+          <p>Sequential cryptographic block records linked by SHA-256 hashes.</p>
+        </div>
+        <div>
+          <button id="btnVerifyChain" class="btn btn-primary">
+            🛡️ Verify Blockchain Integrity
+          </button>
+        </div>
+      </div>
+
+      <!-- Visual Sequence Diagram -->
+      <div class="content-box" style="padding: 16px 20px; margin-bottom: 20px;">
+        <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">
+          Sequential Chain Linkage (Genesis &rarr; Latest)
+        </div>
+        <div class="chain-diagram" id="chainDiagramVisual">
+          <!-- Horizontal chain circles rendered here -->
+        </div>
+      </div>
+
+      <!-- Blockchain Integrity Modal / Banner -->
+      <div id="chainVerificationResultBox" style="display: none; margin-bottom: 20px;"></div>
+
+      <!-- Blockchain Table -->
+      <div class="content-box">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 70px;">Block</th>
+                <th>Hash</th>
+                <th>Previous Hash</th>
+                <th>Votes</th>
+                <th>Timestamp</th>
+                <th>Nonce</th>
+                <th style="width: 90px;">Status</th>
+                <th style="text-align: right; width: 100px;">Details</th>
+              </tr>
+            </thead>
+            <tbody id="blockchainTableBody">
+              <tr>
+                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                  Loading blockchain blocks...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Block Details Drawer / Box (When a row is clicked) -->
+      <div id="blockDetailPanel" class="content-box" style="display: none; border-left: 4px solid var(--color-blue-primary);">
+        <div class="content-box-header">
+          <h3 id="blockDetailTitle">Block #0 Details</h3>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('blockDetailPanel').style.display = 'none';">Close</button>
+        </div>
+        <div class="table-responsive" style="margin-bottom: 16px;">
+          <table class="data-table">
+            <tbody id="blockDetailBody"></tbody>
+          </table>
+        </div>
+        <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Sealed Ballots in this Block:</h4>
+        <div id="blockDetailBallotsList"></div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 6: NETWORK / NODES
+         ========================================================================= -->
+    <section id="tab-network" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Network & Node Architecture</h2>
+          <p>Decentralized node status, peer discovery, and Nakamoto chain synchronization.</p>
+        </div>
+        <div>
+          <button id="btnSyncChain" class="btn btn-primary btn-sm">🔄 Sync with Peers</button>
+        </div>
+      </div>
+
+      <!-- Simple Network Diagram -->
+      <div class="content-box" style="margin-bottom: 24px;">
+        <div class="content-box-header">
+          <h3>Decentralized Topology</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">Peer-to-peer consensus architecture</span>
+        </div>
+        <div class="network-diagram" id="networkDiagramContainer">
+          <div class="node-box current">
+            <div style="font-size: 12px; font-weight: 700; color: var(--color-blue-primary);">LOCAL NODE</div>
+            <div style="font-size: 14px; font-weight: 700; margin-top: 4px;">Node 1 (Port 8000)</div>
+            <span class="system-badge badge-online" style="margin-top: 6px;">ONLINE</span>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="netDiagramLocalHeight">Height: 1</div>
+          </div>
+          <div class="network-link-line"></div>
+          <div class="node-box">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted);">PEER INSTANCE</div>
+            <div style="font-size: 14px; font-weight: 600; margin-top: 4px;" id="netPeerLabel1">Registered Peers</div>
+            <span class="system-badge badge-valid" style="margin-top: 6px;" id="netPeerBadgeCount">0 Connected</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layout-split">
+        <!-- Node Table -->
+        <div class="content-box">
+          <div class="content-box-header">
+            <h3>Connected Peer Nodes</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Node Endpoint</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="peerNodesTableBody">
+                <tr>
+                  <td colspan="3" style="text-align: center; color: var(--text-muted); padding: 18px;">
+                    No external peers registered. Local node operating as authority.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Add Peer Form -->
+        <div class="content-box">
+          <div class="content-box-header">
+            <h3>Add Peer Node Connection</h3>
+          </div>
+          <form id="addPeerForm">
+            <div class="form-group">
+              <label class="form-label" for="peerUrlInput">Peer Node URL</label>
+              <input type="url" id="peerUrlInput" class="form-control font-mono" placeholder="http://127.0.0.1:8001" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Connect Peer</button>
+          </form>
+          <div style="margin-top: 20px; font-size: 12.5px; color: var(--text-muted); line-height: 1.6;">
+            <strong>Consensus Policy:</strong> OpenBallot utilizes Nakamoto longest-chain conflict resolution. When synchronizing, your node queries connected peers and automatically adopts the valid branch with the greatest cumulative proof-of-work.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 7: MEMPOOL
+         ========================================================================= -->
+    <section id="tab-mempool" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Unconfirmed Ballot Mempool</h2>
+          <p>Mempool contains valid cryptographic ballots waiting to be included in the next block.</p>
+        </div>
+        <div>
+          <button id="btnMineBlockAction" class="btn btn-primary">
+            ⛏️ Mine Block (Proof-of-Work)
+          </button>
+        </div>
+      </div>
+
+      <!-- Mining Status Box -->
+      <div id="miningStatusBanner" class="content-box box-light-blue" style="display: none; margin-bottom: 20px;">
+        <div id="miningStatusText" style="font-weight: 600; color: #1e3a8a;">Mining in progress...</div>
+      </div>
+
+      <!-- Mempool Table -->
+      <div class="content-box">
+        <div class="content-box-header">
+          <div>
+            <h3>Pending Transaction Pool</h3>
+            <span style="font-size: 12px; color: var(--text-muted);">Transactions verified cryptographically upon ingestion</span>
+          </div>
+          <span class="system-badge badge-warning" id="mempoolTableCount">Pending: 0</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th>Proposal ID</th>
+                <th>Voter ID</th>
+                <th>Choice</th>
+                <th>Weight</th>
+                <th>Signature Status</th>
+              </tr>
+            </thead>
+            <tbody id="mempoolTableBody">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                  Mempool is currently empty. Cast a vote to see it staged here.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 8: RESULTS
+         ========================================================================= -->
+    <section id="tab-results" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Official Election Results</h2>
+          <p>Auditable tallies calculated strictly from ballots recorded on the verified ledger.</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <select id="resultsProposalFilter" class="form-control" style="font-weight: 600; width: auto;">
+            <option value="PROP-2026-01">PROP-2026-01: Campus Student Government 2026</option>
+            <option value="PROP-2026-02">PROP-2026-02: University Library 24/7 Hours</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Results Display Container -->
+      <div id="resultsCardContainer">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 9: AUDIT LOG
+         ========================================================================= -->
+    <section id="tab-audit-log" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>System Audit Log</h2>
+          <p>Immutable chronological record of node operations, signature checks, and consensus events.</p>
+        </div>
+        <button id="btnRefreshAudit" class="btn btn-secondary btn-sm">Refresh Audit</button>
+      </div>
+
+      <div class="content-box">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 100px;">Time</th>
+                <th style="width: 190px;">Event Type</th>
+                <th>Description</th>
+                <th style="width: 100px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="auditLogTableBody">
+              <tr>
+                <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                  Loading audit log records...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 10: CITIZEN & VOTER REGISTRY
+         ========================================================================= -->
+    <section id="tab-voters" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Citizen & Voter Registry</h2>
+          <p>Manage registered citizens, cryptographic credentials, and authorized voting whitelists.</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-primary btn-sm" id="btnOpenCreateCitizenModal">+ Create New Citizen</button>
+          <button class="btn btn-secondary btn-sm" id="btnBulkGenerateCitizens" title="Generate 5 realistic test citizens for demo">⚡ Generate 5 Test Citizens</button>
+        </div>
+      </div>
+
+      <div class="layout-split">
+        <!-- Voter List -->
+        <div class="content-box">
+          <div class="content-box-header">
+            <h3>Whitelisted Citizens & Voters</h3>
+            <span class="system-badge badge-valid" id="votersCountBadge">5 Authorized</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Citizen Name</th>
+                  <th>District / Precinct</th>
+                  <th>Voter ID (Public Key)</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="votersTableBody">
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">
+                    Loading citizen registry...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right Side: Forms -->
+        <div>
+          <!-- Quick Register Form -->
+          <div class="content-box" style="margin-bottom: 20px;">
+            <div class="content-box-header">
+              <h3>Fast Citizen Registration</h3>
+            </div>
+            <form id="quickCitizenForm">
+              <div class="form-group">
+                <label class="form-label" for="quickCitizenName">Full Name</label>
+                <input type="text" id="quickCitizenName" class="form-control" placeholder="e.g. Maya Lin" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="quickCitizenDistrict">District / Precinct</label>
+                <input type="text" id="quickCitizenDistrict" class="form-control" placeholder="e.g. Science Precinct" value="District Alpha">
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%;">Generate Ed25519 Keys & Whitelist</button>
+            </form>
+          </div>
+
+          <!-- Authorize Existing Key Form -->
+          <div class="content-box">
+            <div class="content-box-header">
+              <h3>Authorize Existing Public Key</h3>
+            </div>
+            <form id="registerVoterKeyForm">
+              <div class="form-group">
+                <label class="form-label" for="newVoterPubInput">Voter Public Key (64-char Hex)</label>
+                <input type="text" id="newVoterPubInput" class="form-control font-mono" placeholder="e.g. 58bea4c603be5452..." required>
+              </div>
+              <button type="submit" class="btn btn-secondary" style="width: 100%;">Whitelist Public Key</button>
+            </form>
+            <div style="margin-top: 16px; padding: 10px; background-color: var(--bg-subtle); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+              <strong>Security Rule:</strong> OpenBallot only accepts ballots signed by public keys that exist in the authorized whitelist.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 11: SECURITY INFORMATION & ATTACK SANDBOX
+         ========================================================================= -->
+    <section id="tab-security" class="page-tab-pane">
+      <div class="page-header">
+        <div>
+          <h2>Security Architecture & Interactive Attack Sandbox</h2>
+          <p>Test cryptographic defenses and verify tamper-proof properties in real-time.</p>
+        </div>
+      </div>
+
+      <!-- Interactive Attack Sandbox -->
+      <div class="content-box" style="margin-bottom: 24px; border-left: 4px solid var(--color-blue-primary);">
+        <div class="content-box-header">
+          <div>
+            <h3 style="font-size: 16px; color: var(--text-primary);">Interactive Cybersecurity Attack Simulator</h3>
+            <p style="font-size: 13px; color: var(--text-muted); margin-top: 2px;">
+              Trigger real cryptographic attack vectors against the local node to demonstrate how OpenBallot intercepts and rejects exploits.
+            </p>
+          </div>
+        </div>
+
+        <div class="attack-grid">
+          <div class="attack-card">
+            <div>
+              <div class="attack-card-header">
+                <span class="attack-icon">🔁</span>
+                <span class="attack-title">Double Voting Attack</span>
+              </div>
+              <p class="attack-desc">
+                Attempts to broadcast two signed ballots for the same proposal using identical citizen credentials.
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="runAttackSimulation('DOUBLE_VOTE')">
+              Execute Attack &rarr;
+            </button>
+          </div>
+
+          <div class="attack-card">
+            <div>
+              <div class="attack-card-header">
+                <span class="attack-icon">🚫</span>
+                <span class="attack-title">Unauthorized Voter</span>
+              </div>
+              <p class="attack-desc">
+                Generates a fresh rogue keypair and attempts to vote without being whitelisted by election authorities.
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="runAttackSimulation('UNAUTHORIZED_VOTER')">
+              Execute Attack &rarr;
+            </button>
+          </div>
+
+          <div class="attack-card">
+            <div>
+              <div class="attack-card-header">
+                <span class="attack-icon">✍️</span>
+                <span class="attack-title">Signature Tampering</span>
+              </div>
+              <p class="attack-desc">
+                Alters vote choice from YES to NO after cryptographic signing, breaking the SHA-256 ballot digest.
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="runAttackSimulation('SIGNATURE_TAMPER')">
+              Execute Attack &rarr;
+            </button>
+          </div>
+
+          <div class="attack-card">
+            <div>
+              <div class="attack-card-header">
+                <span class="attack-icon">⚖️</span>
+                <span class="attack-title">Weight Inflation</span>
+              </div>
+              <p class="attack-desc">
+                Attempts to submit a ballot with stake weight=5 to test constitutional egalitarian policy (1 citizen = 1 vote).
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="runAttackSimulation('WEIGHT_TAMPER')">
+              Execute Attack &rarr;
+            </button>
+          </div>
+        </div>
+
+        <!-- Sandbox Output Terminal -->
+        <div style="margin-top: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Real-time Node Interception Diagnostic Console</span>
+            <button class="btn btn-secondary btn-sm" onclick="clearSandboxTerminal()" style="font-size: 11px; padding: 2px 8px;">Clear Console</button>
+          </div>
+          <div class="sandbox-terminal" id="sandboxConsole">
+            <div class="terminal-line terminal-tag-info">[SYSTEM] OpenBallot Security Sandbox ready. Select an attack vector above to test cryptographic defense boundaries.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Core Architecture Cards -->
+      <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">Cryptographic Security Principles</h3>
+      <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+        <div class="content-box">
+          <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--color-blue-primary);">Ed25519 Cryptography</h3>
+          <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5;">
+            Digitally signs ballots so the system can verify who authorized them without sharing secrets. Prevents forgery and guarantees non-repudiation.
+          </p>
+        </div>
+
+        <div class="content-box">
+          <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--color-blue-primary);">SHA-256 Hashing</h3>
+          <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5;">
+            Creates one-way cryptographic digests used to uniquely identify ballots and permanently bind sequential blocks in the ledger.
+          </p>
+        </div>
+
+        <div class="content-box">
+          <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--color-blue-primary);">Proof-of-Work (PoW)</h3>
+          <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5;">
+            Requires verifiable computational work to seal each block, making past election history computationally infeasible to rewrite.
+          </p>
+        </div>
+
+        <div class="content-box">
+          <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--color-blue-primary);">Blockchain Ledger</h3>
+          <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5;">
+            Links blocks together in an append-only sequence where any unauthorized modification immediately breaks cryptographic hashes down the chain.
+          </p>
+        </div>
+
+        <div class="content-box">
+          <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--color-blue-primary);">Nakamoto Consensus</h3>
+          <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5;">
+            Allows distributed nodes to converge on a single authoritative ledger history by adopting the longest valid chain across peers.
+          </p>
+        </div>
+
+        <div class="content-box">
+          <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--color-blue-primary);">Transaction Mempool</h3>
+          <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5;">
+            Temporarily holds valid submitted ballots while awaiting block mining, enforcing duplicate-submission protection at the staging layer.
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================================
+       MODALS: CITIZEN CREATION, CREDENTIALS, ELECTION CREATION
+       ========================================================================= -->
+
+  <!-- Modal 1: Create Citizen -->
+  <div id="modalCreateCitizen" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Create & Whitelist New Citizen</h3>
+        <button class="modal-close-btn" onclick="closeModal('modalCreateCitizen')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="modalCreateCitizenForm">
+          <div class="form-group">
+            <label class="form-label" for="citizenFullName">Full Name *</label>
+            <input type="text" id="citizenFullName" class="form-control" placeholder="e.g. Dr. Maya Lin" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="citizenDistrict">District / Precinct / Faculty *</label>
+            <input type="text" id="citizenDistrict" class="form-control" placeholder="e.g. Engineering Precinct" value="District Alpha" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cryptographic Keypair Generation</label>
+            <div style="font-size: 13px; color: var(--text-muted); background: var(--bg-subtle); padding: 10px; border-radius: var(--radius-sm);">
+              🔒 An <strong>Ed25519</strong> elliptic curve keypair will be cryptographically generated. The public key will be registered on the blockchain whitelist, and you will receive the private key credential.
+            </div>
+          </div>
+          <div class="modal-footer" style="padding-left: 0; padding-right: 0; padding-bottom: 0;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalCreateCitizen')">Cancel</button>
+            <button type="submit" class="btn btn-primary">Generate Keys & Whitelist Citizen</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Citizen Credentials Card -->
+  <div id="modalCitizenCredentials" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🇮🇳 Digital Voter Identity Card (डिजिटल मतदाता पत्र)</h3>
+        <button class="modal-close-btn" onclick="closeModal('modalCitizenCredentials')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="credential-card">
+          <div class="credential-header">
+            <div>
+              <div style="font-size: 18px; font-weight: 700; color: #1e3a8a;" id="cardCitizenName">Citizen Name</div>
+              <div style="font-size: 13px; color: var(--color-blue-primary);" id="cardCitizenDistrict">Constituency</div>
+            </div>
+            <div class="credential-chip">🇮🇳 VERIFIED ELECTOR (EPIC)</div>
+          </div>
+
+          <div class="credential-field">
+            <div class="credential-label">Public Voter ID (Blockchain Identity)</div>
+            <div class="credential-value font-mono" id="cardCitizenVoterId" style="font-size: 12px;">-</div>
+          </div>
+
+          <div class="credential-field">
+            <div class="credential-label">Voter Secret Key (Private Signing Key)</div>
+            <div class="credential-value font-mono" id="cardCitizenSecretKey" style="font-size: 12px; color: #b91c1c;">-</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Keep this key secure. It is used to generate mathematical digital signatures.</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-primary" id="btnDownloadCitizenJson" style="flex: 1;">📥 Download Credentials (.json)</button>
+          <button class="btn btn-secondary" id="btnSelectCitizenForVote" style="flex: 1;">🗳 Use to Cast Vote Now</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Create New Election / Referendum -->
+  <div id="modalCreateElection" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Create New Election / Referendum</h3>
+        <button class="modal-close-btn" onclick="closeModal('modalCreateElection')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="modalCreateElectionForm">
+          <div class="form-group">
+            <label class="form-label" for="electionProposalId">Proposal ID *</label>
+            <input type="text" id="electionProposalId" class="form-control font-mono" placeholder="e.g. PROP-2026-03" required>
+            <span style="font-size: 11px; color: var(--text-muted);">Unique uppercase identifier for the blockchain ledger</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="electionTitle">Election / Ballot Title *</label>
+            <input type="text" id="electionTitle" class="form-control" placeholder="e.g. Municipal Clean Energy Initiative 2026" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="electionCategory">Category</label>
+            <input type="text" id="electionCategory" class="form-control" placeholder="e.g. Municipal Governance, Campus, Faculty" value="Governance">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="electionDescription">Description & Charter Summary</label>
+            <textarea id="electionDescription" class="form-control" rows="3" placeholder="Explain the referendum question or elected position details..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="electionChoices">Ballot Choices (Comma-Separated)</label>
+            <input type="text" id="electionChoices" class="form-control" placeholder="YES, NO, ABSTAIN" value="YES, NO, ABSTAIN">
+            <span style="font-size: 11px; color: var(--text-muted);">Example: Candidate Alpha, Candidate Beta, Candidate Gamma, Abstain</span>
+          </div>
+          <div class="modal-footer" style="padding-left: 0; padding-right: 0; padding-bottom: 0;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalCreateElection')">Cancel</button>
+            <button type="submit" class="btn btn-primary">Publish Referendum to Node</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Verifiable Vote Receipt -->
+  <div id="modalReceipt" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Official Cryptographic Ballot Receipt</h3>
+        <button class="modal-close-btn" onclick="closeModal('modalReceipt')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="credential-card" style="border-color: var(--success-green); background: #f0fdf4;">
+          <div class="credential-header">
+            <div>
+              <div style="font-size: 16px; font-weight: 700; color: #15803d;">Ballot Ingested & Verified</div>
+              <div style="font-size: 12px; color: var(--text-muted);" id="receiptTimestamp">Timestamp</div>
+            </div>
+            <div class="credential-chip" style="background-color: var(--success-green);">CRYPTOGRAPHIC PROOF</div>
+          </div>
+
+          <div class="credential-field">
+            <div class="credential-label">Vote Digest (SHA-256 Hash)</div>
+            <div class="credential-value font-mono" id="receiptVoteId" style="font-size: 12px; color: #15803d;">-</div>
+          </div>
+
+          <div class="credential-field">
+            <div class="credential-label">Proposal</div>
+            <div class="credential-value" id="receiptProposal">-</div>
+          </div>
+
+          <div class="credential-field">
+            <div class="credential-label">Verification Status</div>
+            <div class="credential-value" style="color: #2563eb;">Queued in Mempool &bull; Awaiting Next Block Sealing</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-primary" onclick="copyReceiptDigest()" style="flex: 1;">📋 Copy Receipt Digest</button>
+          <button class="btn btn-secondary" onclick="verifyReceiptOnChain()" style="flex: 1;">🔍 Verify in Explorer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clean Unobtrusive Toast Notifications -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- Footer -->
+  <footer>
+    <div style="max-width: 1280px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+      <div>
+        <strong>OpenBallot Node Daemon v0.2.1</strong> &bull; Cryptographic Voting System
+      </div>
+      <div>
+        Nakamoto Consensus &bull; Ed25519 Signatures &bull; Immutable Ledger
+      </div>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
