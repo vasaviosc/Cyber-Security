@@ -11,12 +11,19 @@ class Mempool:
         self._pool: List[Ballot] = []
         self._lock = Lock()
 
+    def has_ballot(self, proposal_id: str, voter_id: str) -> bool:
+        v_id = voter_id.strip().lower()
+        p_id = proposal_id.strip()
+        with self._lock:
+            return any(b.proposal_id == p_id and b.voter_id.lower() == v_id for b in self._pool)
+
     def add(self, ballot: Ballot) -> bool:
+        v_id = ballot.voter_id.strip().lower()
+        p_id = ballot.proposal_id.strip()
         with self._lock:
             if any(
-                pending.proposal_id == ballot.proposal_id
-                and pending.voter_id.lower() == ballot.voter_id.lower()
-                for pending in self._pool
+                b.proposal_id == p_id and b.voter_id.lower() == v_id
+                for b in self._pool
             ):
                 return False
             self._pool.append(ballot)

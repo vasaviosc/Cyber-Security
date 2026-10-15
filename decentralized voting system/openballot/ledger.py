@@ -5,9 +5,10 @@ GENESIS_PREV_HASH = "0" * 64
 
 
 class Ledger:
-    def __init__(self, voter_registry: Optional[Set[str]] = None):
+    def __init__(self, voter_registry: Optional[Set[str]] = None, open_election: bool = False):
         self.chain: List[Block] = []
-        self.voter_registry: Set[str] = voter_registry or set()
+        self.voter_registry: Set[str] = {v.strip().lower() for v in voter_registry} if voter_registry else set()
+        self.open_election = open_election
 
     def create_genesis_block(self) -> Block:
         if self.chain:
@@ -27,28 +28,43 @@ class Ledger:
 
     def is_registered(self, voter_id: str) -> bool:
         if not self.voter_registry:
-            # If no registry provided, open voter policy
-            return True
+            return self.open_election
         return voter_id.strip().lower() in self.voter_registry
 
     def has_voted(self, proposal_id: str, voter_id: str) -> bool:
         canonical_voter_id = voter_id.strip().lower()
+        p_id = proposal_id.strip()
         for block in self.chain:
             for ballot in block.ballots:
                 if (
-                    ballot.proposal_id == proposal_id
-                    and ballot.voter_id.lower() == canonical_voter_id
+                    ballot.proposal_id == p_id
+                    and ballot.voter_id.strip().lower() == canonical_voter_id
                 ):
                     return True
         return False
 
     def tally(self, proposal_id: str) -> Dict[str, int]:
         results: Dict[str, int] = {}
+        counted_voters: Set[str] = set()
+        p_id = proposal_id.strip()
         for block in self.chain:
             for ballot in block.ballots:
-                if ballot.proposal_id == proposal_id:
-                    results[ballot.choice] = results.get(ballot.choice, 0) + ballot.weight
+                if ballot.proposal_id == p_id:
+                    v_id = ballot.voter_id.strip().lower()
+                    if v_id not in counted_voters:
+                        counted_voters.add(v_id)
+                        results[ballot.choice] = results.get(ballot.choice, 0) + ballot.weight
         return results
+
+    def get_proposals(self) -> List[str]:
+        proposals = []
+        seen = set()
+        for block in self.chain:
+            for ballot in block.ballots:
+                if ballot.proposal_id and ballot.proposal_id not in seen:
+                    seen.add(ballot.proposal_id)
+                    proposals.append(ballot.proposal_id)
+        return proposals
 
     @property
     def latest_block(self) -> Block:

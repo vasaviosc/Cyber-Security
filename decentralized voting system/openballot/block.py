@@ -1,7 +1,7 @@
 import hashlib
 import json
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from openballot.ballot import Ballot
 
 
@@ -11,14 +11,14 @@ class Block:
         index: int,
         prev_hash: str,
         ballots: List[Ballot],
-        timestamp: float = None,
+        timestamp: Optional[float] = None,
         nonce: int = 0
     ):
-        self.index = index
+        self.index = int(index)
         self.prev_hash = prev_hash
         self.ballots = ballots
-        self.timestamp = timestamp if timestamp is not None else time.time()
-        self.nonce = nonce
+        self.timestamp = round(float(timestamp) if timestamp is not None else time.time(), 4)
+        self.nonce = int(nonce)
         self.hash = self.compute_hash()
 
     def compute_hash(self) -> str:
