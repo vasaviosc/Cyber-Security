@@ -5,64 +5,86 @@
 
 const API_BASE = window.location.origin;
 
-// Voter keyring store - synchronized dynamically with blockchain node & sample_voters.json
-let VOTER_KEYRING = {
-  aarav_sharma: {
-    name: "Aarav Sharma (New Delhi Central DL-04)",
-    voter_id: "c433600b71c72f5e75287f4e31e9f3ba4bbcc4e1b6fec236e4d95fc9dd40dbd8",
-    secret_key: "97e14f15e73dbed87cfbb55623bb232febdda7e14b20ce7f361201b4871c3e37",
-    district: "New Delhi Central (DL-04)"
-  },
-  priya_patel: {
-    name: "Priya Patel (Ahmedabad West GJ-08)",
-    voter_id: "88dbf9f66de9efc0147bb7891f83510ce6bebbfd7a6131bd49daa7d5df0aa39c",
-    secret_key: "8a229db248c1e01f72c402728be7b338aa456fdf805d0fae87be1e67e76267ae",
-    district: "Ahmedabad West (GJ-08)"
-  },
-  rahul_verma: {
-    name: "Rahul Verma (Bengaluru South KA-26)",
-    voter_id: "68f6015c851728a61191453f9df75bc94c264e7c9897538adb27354a3f5aa57f",
-    secret_key: "93a265f188730bbfb757d9def21c2b9072a27b637e112faea2d148a0158a1c9e",
-    district: "Bengaluru South (KA-26)"
-  },
-  ananya_iyer: {
-    name: "Ananya Iyer (Chennai Central TN-04)",
-    voter_id: "fcf0847a54a13e6b59c00192ef7ec2b1df2d908b1d53ed67086e5a63c68dd6a9",
-    secret_key: "33d8d8bf291bd6cb36d49fc4382d6619a68d27e599e95f89fe293a844e1ad1e6",
-    district: "Chennai Central (TN-04)"
-  },
-  rohan_mukherjee: {
-    name: "Rohan Mukherjee (Kolkata North WB-24)",
-    voter_id: "f8d101d7d6fd351e7e62881a79c2d17a7aba13aa935ddc4b8551119d80ba6769",
-    secret_key: "92759e48066fe98935d09adb1cd89855d39b7f628f98053f22e8ca75a34a7130",
-    district: "Kolkata North (WB-24)"
-  },
-  elena_rostova: {
-    name: "Elena Rostova (Physics Ward)",
-    voter_id: "872595af0c083ec8dbc8ff5e935559f886f6bf7e987d5f6a1e588c522b654584",
-    secret_key: "cd33caa6dfa35c78f0dee37f9fec77b62549dd9e47e9bc8250e85872b2dca336",
-    district: "Physics Ward"
-  },
-  sneha_pillai: {
-    name: "Sneha Pillai (District Tech)",
-    voter_id: "4d6dd6a38b9b94e8497679d0ec49f904e23c223380df10f4e10ec3a620d1b0e6",
-    secret_key: "5a119f2be8eb2651b6f0da9bb43ee00ff44b256ddad4e802c87316d0ba3c02f0",
-    district: "District Tech"
-  },
-  krishna_chauhan: {
-    name: "Krishna Chauhan (District Tech)",
-    voter_id: "38ac902282368a51c80e362deca3bd3d528a633ed6b9138b38a37922fb9a4d1e",
-    secret_key: "f5600706b318860fe58cab4c7fe5c9b69a4e1a389de57e5dea73c8ba6079d3ee",
-    district: "District Tech"
-  }
-};
+// Dynamic voter keyring store - populated dynamically from registered citizens or newly generated profiles
+let VOTER_KEYRING = {};
 
-// Aliases for quick backward-compatibility lookup
-VOTER_KEYRING["aarav"] = VOTER_KEYRING["aarav_sharma"];
-VOTER_KEYRING["priya"] = VOTER_KEYRING["priya_patel"];
-VOTER_KEYRING["rahul"] = VOTER_KEYRING["rahul_verma"];
-VOTER_KEYRING["ananya"] = VOTER_KEYRING["ananya_iyer"];
-VOTER_KEYRING["rohan"] = VOTER_KEYRING["rohan_mukherjee"];
+// Client-side WebCrypto Ed25519 helper functions
+async function derivePublicKey(secretKeyHex) {
+  const pkcs8Header = new Uint8Array([
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20
+  ]);
+  const cleanHex = (secretKeyHex || "").trim().toLowerCase();
+  const match = cleanHex.match(/.{1,2}/g);
+  if (!match || match.length !== 32) throw new Error("Invalid 32-byte secret key hex");
+  const secretBytes = new Uint8Array(match.map(b => parseInt(b, 16)));
+  const pkcs8Bytes = new Uint8Array(pkcs8Header.length + secretBytes.length);
+  pkcs8Bytes.set(pkcs8Header, 0);
+  pkcs8Bytes.set(secretBytes, pkcs8Header.length);
+
+  const privKey = await crypto.subtle.importKey("pkcs8", pkcs8Bytes, { name: "Ed25519" }, true, ["sign"]);
+  const jwk = await crypto.subtle.exportKey("jwk", privKey);
+  const base64 = jwk.x.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(base64);
+  let hex = "";
+  for (let i = 0; i < bin.length; i++) {
+    hex += bin.charCodeAt(i).toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+async function signBallotInBrowser(secretKeyHex, voterId, proposalId, choice, weight = 1) {
+  const payload = {
+    choice: choice.trim(),
+    domain: "openballot:ballot:v1",
+    proposal_id: proposalId.trim(),
+    voter_id: voterId.trim().toLowerCase(),
+    weight: parseInt(weight, 10)
+  };
+  const canonical = JSON.stringify(payload, Object.keys(payload).sort());
+  const encoder = new TextEncoder();
+  const digestBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(canonical));
+
+  const pkcs8Header = new Uint8Array([
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20
+  ]);
+  const cleanHex = (secretKeyHex || "").trim().toLowerCase();
+  const match = cleanHex.match(/.{1,2}/g);
+  if (!match || match.length !== 32) {
+    throw new Error("Secret key must be a 32-byte (64 hex characters) Ed25519 seed");
+  }
+  const secretBytes = new Uint8Array(match.map(byte => parseInt(byte, 16)));
+  const pkcs8Bytes = new Uint8Array(pkcs8Header.length + secretBytes.length);
+  pkcs8Bytes.set(pkcs8Header, 0);
+  pkcs8Bytes.set(secretBytes, pkcs8Header.length);
+
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    pkcs8Bytes,
+    { name: "Ed25519" },
+    false,
+    ["sign"]
+  );
+
+  const sigBuffer = await crypto.subtle.sign({ name: "Ed25519" }, privateKey, digestBuffer);
+  const signatureHex = Array.from(new Uint8Array(sigBuffer))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+  const digestHex = Array.from(new Uint8Array(digestBuffer))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  return {
+    ballot: {
+      voter_id: voterId.trim().toLowerCase(),
+      proposal_id: proposalId.trim(),
+      choice: choice.trim(),
+      weight: parseInt(weight, 10),
+      signature: signatureHex
+    },
+    signature: signatureHex,
+    digest: digestHex
+  };
+}
 
 let activeCitizenForCard = null;
 let cachedChain = [];
@@ -804,7 +826,7 @@ function renderPeersTable(peers) {
 // =========================================================================
 const btnReview = document.getElementById("btnReviewVote");
 if (btnReview) {
-  btnReview.addEventListener("click", () => {
+  btnReview.addEventListener("click", async () => {
     const profileKey = voterProfileSelect.value;
     let secretKey = "";
     let voterId = "";
@@ -815,9 +837,14 @@ if (btnReview) {
         showToast("Please enter your 64-character voter secret key", "error");
         return;
       }
-      voterId = "Deriving from private key...";
+      try {
+        voterId = await derivePublicKey(secretKey);
+      } catch (e) {
+        showToast("Invalid private key format", "error");
+        return;
+      }
     } else if (VOTER_KEYRING[profileKey]) {
-      secretKey = VOTER_KEYRING[profileKey].secret_key;
+      secretKey = VOTER_KEYRING[profileKey].secret_key || "";
       voterId = VOTER_KEYRING[profileKey].voter_id;
     }
 
@@ -868,22 +895,17 @@ if (btnConfirm) {
 
     try {
       if (!pendingVotePayload) throw new Error("Missing ballot payload");
-
-      const signRes = await fetch(`${API_BASE}/api/v1/sign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          secret_key: pendingVotePayload.secretKey,
-          voter_id: pendingVotePayload.voterId,
-          proposal_id: pendingVotePayload.proposalId,
-          choice: pendingVotePayload.choice,
-          weight: 1
-        })
-      });
-      const signData = await signRes.json();
-      if (!signRes.ok || signData.error) {
-        throw new Error(signData.error || "Digital signature creation failed");
+      if (!pendingVotePayload.secretKey) {
+        throw new Error("Secret key is required for client-side cryptographic signing");
       }
+
+      const signData = await signBallotInBrowser(
+        pendingVotePayload.secretKey,
+        pendingVotePayload.voterId,
+        pendingVotePayload.proposalId,
+        pendingVotePayload.choice,
+        1
+      );
 
       const ballotRes = await fetch(`${API_BASE}/api/v1/ballots`, {
         method: "POST",

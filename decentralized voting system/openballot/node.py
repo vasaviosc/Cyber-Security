@@ -54,9 +54,7 @@ class NodeServer(ThreadingHTTPServer):
             for c in citizen_manager.get_all(include_secrets=False):
                 self.ledger.register_voter(c["voter_id"])
 
-        # Whitelist legacy/UI test voter IDs so all test flows work seamlessly
-        self.ledger.register_voter("c433600b71c72f5e8bc803964923e3e09fe2620703f6795f70bb0bc20630fc2f")
-        self.ledger.register_voter("1badc97bfc7d78d105500c4962aabaf9eeba9f4fecc41677c68486d12bfc0b21")
+
 
     def broadcast_event(self, event_type: str, data: Dict[str, Any]):
         dead = []
@@ -820,54 +818,7 @@ class NodeHandler(BaseHTTPRequestHandler):
                 "secret_key": priv_hex
             })
 
-        # Safe signing helper for web demonstration
-        elif path == "/api/v1/sign":
-            secret_key_hex = str(data.get("secret_key", "")).strip()
-            proposal_id = str(data.get("proposal_id", "")).strip()
-            choice = str(data.get("choice", "")).strip().upper()
-            weight = int(data.get("weight", 1))
-            voter_id_param = str(data.get("voter_id", "")).strip().lower()
 
-            if not secret_key_hex and voter_id_param:
-                cit = citizen_manager.get(voter_id_param)
-                if cit and cit.secret_key:
-                    secret_key_hex = cit.secret_key
-
-            # Fallback for legacy test ID (Aarav Sharma)
-            if not secret_key_hex and voter_id_param == "c433600b71c72f5e8bc803964923e3e09fe2620703f6795f70bb0bc20630fc2f":
-                aarav = citizen_manager.get("c433600b71c72f5e75287f4e31e9f3ba4bbcc4e1b6fec236e4d95fc9dd40dbd8")
-                if aarav and aarav.secret_key:
-                    secret_key_hex = aarav.secret_key
-
-            if not secret_key_hex or not proposal_id or not choice:
-                return self._send_json({"error": "secret_key, proposal_id, and choice are required"}, 400)
-
-            try:
-                priv = private_key_from_hex(secret_key_hex)
-                pub = priv.public_key()
-                derived_voter_id = public_key_to_hex(pub)
-
-                # Ensure the derived key is recognized in whitelist
-                if not self.node.ledger.is_registered(derived_voter_id):
-                    # Auto-register if created via citizen flow
-                    self.node.ledger.register_voter(derived_voter_id)
-
-                ballot = Ballot(
-                    voter_id=derived_voter_id,
-                    proposal_id=proposal_id,
-                    choice=choice,
-                    weight=weight
-                )
-                sig = sign_message(priv, ballot.get_digest())
-                ballot.signature = sig.hex()
-                return self._send_json({
-                    "ballot": ballot.to_dict(),
-                    "signature": ballot.signature,
-                    "digest": ballot.get_digest().hex(),
-                    "voter_id": derived_voter_id
-                })
-            except Exception as e:
-                return self._send_json({"error": f"Signing error: {e}"}, 400)
 
         else:
             return self._send_json({"error": "Endpoint not found"}, 404)
