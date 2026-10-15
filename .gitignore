@@ -24,3 +24,7 @@ dist/
 Thumbs.db
 *.swp
 .vscode/
+
+# Build and demo artifacts
+*.zip
+sample_voters.json
