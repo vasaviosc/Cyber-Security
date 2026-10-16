@@ -16,12 +16,15 @@ from openballot.ledger import Ledger
 from openballot.node import NodeServer, NodeHandler
 
 
-def _post_json(url: str, payload: dict) -> dict:
+def _post_json(url: str, payload: dict, token: Optional[str] = None) -> dict:
     data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"}
+        headers=headers
     )
     try:
         with urllib.request.urlopen(req) as resp:
@@ -34,8 +37,11 @@ def _post_json(url: str, payload: dict) -> dict:
             return {"error": f"HTTP {e.code}: {err_msg}"}
 
 
-def _get_json(url: str) -> dict:
-    req = urllib.request.Request(url)
+def _get_json(url: str, token: Optional[str] = None) -> dict:
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -85,7 +91,7 @@ def cmd_vote(args):
 
 def cmd_mine(args):
     endpoint = f"{args.node.rstrip('/')}/api/v1/mine"
-    res = _post_json(endpoint, {})
+    res = _post_json(endpoint, {}, token=getattr(args, "token", None))
     print("Miner response:", json.dumps(res, indent=2))
 
 
@@ -106,14 +112,14 @@ def cmd_status(args):
 def cmd_citizen_create(args):
     endpoint = f"{args.node.rstrip('/')}/api/v1/citizens"
     payload = {"name": args.name, "district": args.district}
-    res = _post_json(endpoint, payload)
+    res = _post_json(endpoint, payload, token=getattr(args, "token", None))
     print("Citizen Created & Whitelisted:")
     print(json.dumps(res, indent=2))
 
 
 def cmd_citizen_list(args):
     endpoint = f"{args.node.rstrip('/')}/api/v1/citizens"
-    res = _get_json(endpoint)
+    res = _get_json(endpoint, token=getattr(args, "token", None))
     print(f"Registered Citizens ({res.get('count', 0)}):")
     for c in res.get("citizens", []):
         print(f"  {c['name']:<20} | {c['district']:<18} | ID: {c['voter_id'][:16]}... | Voted: {c['has_voted']}")
@@ -124,23 +130,17 @@ def cmd_serve(args):
     ledger = Ledger()
     ledger.create_genesis_block()
 
-    # Load sample_voters.json if present
-    sample_file = Path(__file__).parent.parent / "sample_voters.json"
-    if sample_file.is_file():
-        try:
-            with open(sample_file, "r") as f:
-                voters_data = json.load(f)
-                for voter_info in voters_data.values():
-                    vid = voter_info.get("voter_id")
-                    if vid:
-                        ledger.register_voter(vid)
-            print(f"[*] Loaded {len(ledger.voter_registry)} authorized voters from sample_voters.json")
-        except Exception as e:
-            print(f"[*] Notice: Could not load sample_voters.json: {e}")
-
-    server = NodeServer(("0.0.0.0", args.port), NodeHandler, ledger=ledger, difficulty=args.difficulty)
-    print(f"[*] OpenBallot node running on http://127.0.0.1:{args.port} (difficulty={args.difficulty})")
-    print(f"[*] OpenBallot Web Interface: http://127.0.0.1:{args.port}/")
+    server = NodeServer(
+        (args.host, args.port),
+        NodeHandler,
+        ledger=ledger,
+        difficulty=args.difficulty,
+        admin_token=args.admin_token
+    )
+    print(f"[*] OpenBallot node running on http://{args.host}:{args.port} (difficulty={args.difficulty})")
+    print(f"[*] OpenBallot Web Interface: http://{args.host}:{args.port}/")
+    if args.admin_token:
+        print("[*] Admin endpoints protected by bearer token.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -169,6 +169,7 @@ def main():
     # mine
     p_mine = subparsers.add_parser("mine", help="Seal pending ballots into a block")
     p_mine.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_mine.add_argument("--token", default=os.environ.get("OPENBALLOT_ADMIN_TOKEN"), help="Admin bearer token")
     p_mine.set_defaults(func=cmd_mine)
 
     # tally
@@ -184,8 +185,10 @@ def main():
 
     # serve
     p_serve = subparsers.add_parser("serve", help="Run node HTTP daemon")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Host interface to bind (default 127.0.0.1)")
     p_serve.add_argument("--port", type=int, default=8000, help="Listen port")
     p_serve.add_argument("--difficulty", type=int, default=1, help="PoW block difficulty")
+    p_serve.add_argument("--admin-token", default=os.environ.get("OPENBALLOT_ADMIN_TOKEN"), help="Admin bearer token for protected endpoints")
     p_serve.set_defaults(func=cmd_serve)
 
     # citizen-create
@@ -193,11 +196,13 @@ def main():
     p_cit_create.add_argument("--name", required=True, help="Citizen full name")
     p_cit_create.add_argument("--district", default="General Precinct", help="Citizen district/precinct")
     p_cit_create.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_cit_create.add_argument("--token", default=os.environ.get("OPENBALLOT_ADMIN_TOKEN"), help="Admin bearer token")
     p_cit_create.set_defaults(func=cmd_citizen_create)
 
     # citizen-list
     p_cit_list = subparsers.add_parser("citizen-list", help="List all registered citizens")
     p_cit_list.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_cit_list.add_argument("--token", default=os.environ.get("OPENBALLOT_ADMIN_TOKEN"), help="Admin bearer token")
     p_cit_list.set_defaults(func=cmd_citizen_list)
 
     parsed_args = parser.parse_args()

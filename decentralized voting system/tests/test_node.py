@@ -14,7 +14,7 @@ from openballot.node import NodeHandler, NodeServer
 
 @pytest.fixture
 def running_node():
-    ledger = Ledger()
+    ledger = Ledger(open_election=True)
     server = NodeServer(("127.0.0.1", 0), NodeHandler, ledger=ledger, difficulty=1)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -127,3 +127,79 @@ def test_sync_rejects_untrusted_genesis_without_tallying_its_ballot(running_node
     assert response["chain_replaced"] is False
     assert len(ledger.chain) == 1
     assert ledger.tally("PROP-ATTACK") == {}
+
+
+def test_admin_token_protection():
+    ledger = Ledger(open_election=True)
+    server = NodeServer(("127.0.0.1", 0), NodeHandler, ledger=ledger, difficulty=1, admin_token="test-secret-token")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        # 1. Unauthenticated admin requests should fail with 401
+        for path in ["/api/v1/mine", "/api/v1/peers", "/api/v1/sync"]:
+            status, res = _post(base_url, path, {})
+            assert status == 401, f"{path} should return 401 without token"
+            assert "Unauthorized" in res.get("error", "")
+
+        # GET /api/v1/citizens and /api/v1/peers should fail with 401
+        for path in ["/api/v1/citizens", "/api/v1/peers"]:
+            req = urllib.request.Request(base_url + path)
+            with pytest.raises(urllib.error.HTTPError) as exc:
+                urllib.request.urlopen(req)
+            assert exc.value.code == 401
+            exc.value.close()
+
+        # 2. Authenticated request with Bearer token succeeds
+        req_auth = urllib.request.Request(
+            base_url + "/api/v1/peers",
+            headers={"Authorization": "Bearer test-secret-token"}
+        )
+        with urllib.request.urlopen(req_auth) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "peers" in data
+
+        # 3. Authenticated request with X-Admin-Token succeeds
+        req_custom = urllib.request.Request(
+            base_url + "/api/v1/mine",
+            data=b"{}",
+            headers={"Content-Type": "application/json", "X-Admin-Token": "test-secret-token"}
+        )
+        with urllib.request.urlopen(req_custom) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data.get("status") == "mined"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_cors_localhost_only(running_node):
+    base_url, _ = running_node
+
+    # Untrusted external origin
+    req_evil = urllib.request.Request(
+        f"{base_url}/health",
+        headers={"Origin": "https://malicious-site.example"}
+    )
+    with urllib.request.urlopen(req_evil) as resp:
+        assert "Access-Control-Allow-Origin" not in resp.headers
+
+    # Localhost origin allowed
+    req_local = urllib.request.Request(
+        f"{base_url}/health",
+        headers={"Origin": "http://localhost:3000"}
+    )
+    with urllib.request.urlopen(req_local) as resp:
+        assert resp.headers.get("Access-Control-Allow-Origin") == "http://localhost:3000"
+
+    # 127.0.0.1 origin allowed
+    req_ip = urllib.request.Request(
+        f"{base_url}/health",
+        headers={"Origin": "http://127.0.0.1:8080"}
+    )
+    with urllib.request.urlopen(req_ip) as resp:
+        assert resp.headers.get("Access-Control-Allow-Origin") == "http://127.0.0.1:8080"
+

@@ -34,7 +34,14 @@ class NodeServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, server_address, RequestHandlerClass, ledger: Ledger, difficulty: int = 1):
+    def __init__(
+        self,
+        server_address,
+        RequestHandlerClass,
+        ledger: Ledger,
+        difficulty: int = 1,
+        admin_token: Optional[str] = None
+    ):
         super().__init__(server_address, RequestHandlerClass)
         self.ledger = ledger
         self.mempool = Mempool()
@@ -43,6 +50,8 @@ class NodeServer(ThreadingHTTPServer):
         self.peers: List[str] = []
         self.state_lock = threading.RLock()
         self.subscribers: List[queue.Queue] = []
+        import os
+        self.admin_token = admin_token if admin_token is not None else os.environ.get("OPENBALLOT_ADMIN_TOKEN")
         if not self.ledger.chain:
             self.ledger.create_genesis_block()
             audit_log.log("GENESIS_CREATED", "Genesis block #0 created with initial proof", "SUCCESS")
@@ -78,15 +87,34 @@ class NodeHandler(BaseHTTPRequestHandler):
         # Prevent noisy tracebacks when clients abort connections
         pass
 
+    def _is_admin_authorized(self) -> bool:
+        if not self.node.admin_token:
+            return True
+        auth_header = self.headers.get("Authorization", "").strip()
+        token = ""
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+        elif "X-Admin-Token" in self.headers:
+            token = self.headers.get("X-Admin-Token", "").strip()
+        return token == self.node.admin_token
+
+    def _apply_cors_headers(self):
+        origin = self.headers.get("Origin", "")
+        if origin:
+            parsed_origin = urlparse(origin)
+            if parsed_origin.hostname in ("localhost", "127.0.0.1", "::1"):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+
     def _send_json(self, data: Any, status: int = 200):
         try:
             body = json.dumps(data).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._apply_cors_headers()
             self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
             self.end_headers()
             self.wfile.write(body)
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
@@ -99,7 +127,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(content)))
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._apply_cors_headers()
             self.end_headers()
             self.wfile.write(content)
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
@@ -119,9 +147,9 @@ class NodeHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._apply_cors_headers()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
         self.end_headers()
 
     def do_GET(self):
@@ -183,7 +211,7 @@ class NodeHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(png_bytes)))
                 self.send_header("Cache-Control", "public, max-age=3600")
-                self.send_header("Access-Control-Allow-Origin", "*")
+                self._apply_cors_headers()
                 self.end_headers()
                 self.wfile.write(png_bytes)
                 return
@@ -229,7 +257,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "keep-alive")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._apply_cors_headers()
             self.end_headers()
             try:
                 self.wfile.write(b"data: {\"event\": \"CONNECTED\"}\n\n")
@@ -360,6 +388,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Citizens Directory & Profiles
         elif path == "/api/v1/citizens":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             citizens_data = []
             proposals = self.node.ledger.get_proposals() or [e["proposal_id"] for e in election_manager.get_all()]
             for c in citizen_manager.get_all(include_secrets=False):
@@ -410,6 +440,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Peers
         elif path == "/api/v1/peers":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             return self._send_json({"peers": self.node.peers})
 
         # Static web application routes
@@ -505,6 +537,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Mine Block
         elif path == "/api/v1/mine":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             with self.node.state_lock:
                 pending = self.node.mempool.drain()
                 audit_log.log("MINING_STARTED", f"Proof-of-work mining initiated for {len(pending)} pending ballots", "INFO")
@@ -555,6 +589,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Peers
         elif path == "/api/v1/peers":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             peer = data.get("peer", "").strip()
             if peer and peer not in self.node.peers:
                 self.node.peers.append(peer)
@@ -563,6 +599,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Sync with peers
         elif path == "/api/v1/sync":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             with self.node.state_lock:
                 # If peer sent a candidate chain, resolve it
                 candidate_raw = data.get("chain", [])
@@ -614,6 +652,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Register voter public key
         elif path == "/api/v1/register":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             voter_id = data.get("voter_id", "").strip().lower()
             if not voter_id:
                 return self._send_json({"error": "Missing voter_id"}, 400)
@@ -630,6 +670,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Create / Register Citizen Profile with Ed25519 Keypair
         elif path == "/api/v1/citizens":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             name = str(data.get("name", "")).strip() or "Citizen Voter"
             district = str(data.get("district", "General Precinct")).strip() or "General Precinct"
             voter_id = str(data.get("voter_id", "")).strip().lower()
@@ -663,6 +705,8 @@ class NodeHandler(BaseHTTPRequestHandler):
 
         # Bulk citizen generation for scalable election simulations
         elif path == "/api/v1/citizens/bulk":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             count = min(int(data.get("count", 5)), 50)
             district = str(data.get("district", "")).strip() or "District Alpha"
             created = []
@@ -829,6 +873,8 @@ class NodeHandler(BaseHTTPRequestHandler):
         data = self._read_json() or {}
 
         if path == "/api/v1/peers":
+            if not self._is_admin_authorized():
+                return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             peer = data.get("peer", "").strip()
             if peer in self.node.peers:
                 self.node.peers.remove(peer)

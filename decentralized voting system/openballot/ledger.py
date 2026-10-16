@@ -27,8 +27,10 @@ class Ledger:
         self.voter_registry.add(voter_id.strip().lower())
 
     def is_registered(self, voter_id: str) -> bool:
+        if self.open_election:
+            return True
         if not self.voter_registry:
-            return self.open_election
+            return False
         return voter_id.strip().lower() in self.voter_registry
 
     def has_voted(self, proposal_id: str, voter_id: str) -> bool:
