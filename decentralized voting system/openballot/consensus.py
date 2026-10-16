@@ -131,7 +131,7 @@ class ConsensusEngine:
         """
         Validates block continuity and transaction integrity using verify_chain_detailed.
         """
-        if not chain or not self.ledger.chain:
+        if not chain:
             return False
         return self.verify_chain_detailed(chain)["valid"]
 

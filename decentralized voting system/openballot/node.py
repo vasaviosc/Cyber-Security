@@ -10,13 +10,14 @@ import urllib
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from typing import Optional, List, Any, Tuple
+from typing import Optional, List, Any, Tuple, Union, Dict
 
 from openballot.ballot import Ballot
 from openballot.block import Block
 from openballot.ledger import Ledger
 from openballot.mempool import Mempool
 from openballot.consensus import ConsensusEngine
+from openballot.storage import SQLiteStorage
 from openballot.audit import audit_log
 from openballot.elections import election_manager
 from openballot.citizens import citizen_manager
@@ -78,7 +79,9 @@ class NodeServer(ThreadingHTTPServer):
         ledger: Ledger,
         difficulty: int = 1,
         admin_token: Optional[str] = None,
-        allow_private_peers: bool = False
+        allow_private_peers: bool = False,
+        storage: Optional[SQLiteStorage] = None,
+        db_path: Optional[Union[str, Path]] = None
     ):
         super().__init__(server_address, RequestHandlerClass)
         self.ledger = ledger
@@ -94,9 +97,33 @@ class NodeServer(ThreadingHTTPServer):
             allow_private_peers
             or os.environ.get("OPENBALLOT_ALLOW_PRIVATE_PEERS", "").lower() in ("1", "true")
         )
-        if not self.ledger.chain:
-            self.ledger.create_genesis_block()
-            audit_log.log("GENESIS_CREATED", "Genesis block #0 created with initial proof", "SUCCESS")
+
+        if storage is not None:
+            self.storage = storage
+        elif db_path is not None:
+            self.storage = SQLiteStorage(Path(db_path))
+        elif os.environ.get("OPENBALLOT_DB_PATH"):
+            self.storage = SQLiteStorage(Path(os.environ["OPENBALLOT_DB_PATH"]))
+        else:
+            self.storage = None
+
+        if self.storage is not None:
+            loaded_chain = self.storage.load_chain()
+            if loaded_chain:
+                if not self.consensus.is_valid_chain(loaded_chain):
+                    audit_log.log("STORAGE_ERROR", "Persistent chain failed integrity validation", "ERROR")
+                    raise ValueError("Refusing to start: loaded blockchain failed integrity validation")
+                self.ledger.chain = loaded_chain
+                audit_log.log("STORAGE_LOADED", f"Successfully restored {len(loaded_chain)} blocks from persistent storage", "SUCCESS")
+            else:
+                if not self.ledger.chain:
+                    self.ledger.create_genesis_block()
+                    audit_log.log("GENESIS_CREATED", "Genesis block #0 created with initial proof", "SUCCESS")
+                self.storage.save_block(self.ledger.chain[0])
+        else:
+            if not self.ledger.chain:
+                self.ledger.create_genesis_block()
+                audit_log.log("GENESIS_CREATED", "Genesis block #0 created with initial proof", "SUCCESS")
 
         # Load registered sample citizens and whitelist them into the ledger
         sample_path = Path(__file__).parent.parent / "sample_voters.json"
@@ -608,6 +635,8 @@ class NodeHandler(BaseHTTPRequestHandler):
                 )
                 new_block.mine(difficulty=self.node.difficulty)
                 self.node.ledger.chain.append(new_block)
+                if self.node.storage is not None:
+                    self.node.storage.save_block(new_block)
 
                 audit_log.log(
                     "BLOCK_MINED",
@@ -664,6 +693,9 @@ class NodeHandler(BaseHTTPRequestHandler):
                                 ballot.proposal_id, ballot.voter_id
                             )
                         )
+                        if self.node.storage is not None:
+                            for blk in self.node.ledger.chain:
+                                self.node.storage.save_block(blk)
                         audit_log.log("CHAIN_SYNC", f"Adopted authoritative peer chain of length {len(candidate)}", "SUCCESS")
                     return self._send_json({
                         "chain_replaced": replaced,
@@ -694,6 +726,9 @@ class NodeHandler(BaseHTTPRequestHandler):
                                         ballot.proposal_id, ballot.voter_id
                                     )
                                 )
+                                if self.node.storage is not None:
+                                    for blk in self.node.ledger.chain:
+                                        self.node.storage.save_block(blk)
                                 audit_log.log("PEER_SYNC", f"Synchronized longer chain from peer {peer_url}", "SUCCESS")
                     except Exception as err:
                         errors.append(f"{peer_url}: {err}")

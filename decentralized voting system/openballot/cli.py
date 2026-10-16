@@ -14,6 +14,7 @@ from openballot.crypto import (
 from openballot.ballot import Ballot
 from openballot.ledger import Ledger
 from openballot.node import NodeServer, NodeHandler
+from openballot.storage import SQLiteStorage
 
 
 def _post_json(url: str, payload: dict, token: Optional[str] = None) -> dict:
@@ -128,19 +129,22 @@ def cmd_citizen_list(args):
 def cmd_serve(args):
     from pathlib import Path
     ledger = Ledger()
-    ledger.create_genesis_block()
 
+    storage = SQLiteStorage(Path(args.db)) if getattr(args, "db", None) else None
     server = NodeServer(
         (args.host, args.port),
         NodeHandler,
         ledger=ledger,
         difficulty=args.difficulty,
-        admin_token=args.admin_token
+        admin_token=args.admin_token,
+        storage=storage
     )
     print(f"[*] OpenBallot node running on http://{args.host}:{args.port} (difficulty={args.difficulty})")
     print(f"[*] OpenBallot Web Interface: http://{args.host}:{args.port}/")
     if args.admin_token:
         print("[*] Admin endpoints protected by bearer token.")
+    if storage:
+        print(f"[*] SQLite blockchain persistence enabled: {args.db}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -189,6 +193,7 @@ def main():
     p_serve.add_argument("--port", type=int, default=8000, help="Listen port")
     p_serve.add_argument("--difficulty", type=int, default=1, help="PoW block difficulty")
     p_serve.add_argument("--admin-token", default=os.environ.get("OPENBALLOT_ADMIN_TOKEN"), help="Admin bearer token for protected endpoints")
+    p_serve.add_argument("--db", type=str, default=None, help="Path to SQLite database for block persistence")
     p_serve.set_defaults(func=cmd_serve)
 
     # citizen-create
