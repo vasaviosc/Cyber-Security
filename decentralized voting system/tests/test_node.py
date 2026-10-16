@@ -203,3 +203,30 @@ def test_cors_localhost_only(running_node):
     with urllib.request.urlopen(req_ip) as resp:
         assert resp.headers.get("Access-Control-Allow-Origin") == "http://127.0.0.1:8080"
 
+
+def test_peer_url_ssrf_validation(running_node):
+    base_url, _ = running_node
+
+    # 1. Non-http/https schemes should be rejected
+    status, res = _post(base_url, "/api/v1/peers", {"peer": "ftp://example.com/chain"})
+    assert status == 400
+    assert "Invalid peer URL" in res.get("error", "")
+
+    # 2. Localhost should be rejected
+    status, res = _post(base_url, "/api/v1/peers", {"peer": "http://localhost:8000"})
+    assert status == 400
+    assert "Invalid peer URL" in res.get("error", "")
+
+    # 3. Private and loopback IP ranges should be rejected
+    for private_peer in [
+        "http://127.0.0.1:9000",
+        "http://192.168.1.100:8000",
+        "http://10.0.0.5:8000",
+        "http://172.16.0.1:8000",
+        "http://169.254.169.254/latest"
+    ]:
+        status, res = _post(base_url, "/api/v1/peers", {"peer": private_peer})
+        assert status == 400, f"{private_peer} should be rejected"
+        assert "Invalid peer URL" in res.get("error", "")
+
+

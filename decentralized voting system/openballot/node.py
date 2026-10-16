@@ -1,14 +1,16 @@
-import urllib
+import ipaddress
 import json
 import logging
 import mimetypes
 import queue
+import socket
 import threading
 import time
+import urllib
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Tuple
 
 from openballot.ballot import Ballot
 from openballot.block import Block
@@ -28,6 +30,41 @@ from openballot.crypto import (
 
 logger = logging.getLogger("openballot.node")
 WEB_DIR = Path(__file__).parent / "web"
+MAX_PEER_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB maximum response size
+
+
+def is_safe_peer_url(url: str, allow_private: bool = False) -> Tuple[bool, str]:
+    if not url or not isinstance(url, str):
+        return False, "URL must be a non-empty string"
+    try:
+        parsed = urlparse(url.strip())
+        if parsed.scheme.lower() not in ("http", "https"):
+            return False, f"URL scheme '{parsed.scheme}' disallowed; must be http or https"
+        hostname = parsed.hostname
+        if not hostname:
+            return False, "URL missing hostname"
+        if not allow_private:
+            if hostname.lower() in ("localhost", "localhost.localdomain"):
+                return False, "Peer address cannot be localhost"
+            try:
+                addr_info = socket.getaddrinfo(hostname, None)
+                for item in addr_info:
+                    ip_str = item[4][0]
+                    ip = ipaddress.ip_address(ip_str)
+                    if (
+                        ip.is_private
+                        or ip.is_loopback
+                        or ip.is_reserved
+                        or ip.is_link_local
+                        or ip.is_multicast
+                        or ip.is_unspecified
+                    ):
+                        return False, f"Peer address resolves to private or restricted IP {ip_str}"
+            except socket.gaierror:
+                return False, f"Could not resolve peer hostname: {hostname}"
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 
 
 class NodeServer(ThreadingHTTPServer):
@@ -40,7 +77,8 @@ class NodeServer(ThreadingHTTPServer):
         RequestHandlerClass,
         ledger: Ledger,
         difficulty: int = 1,
-        admin_token: Optional[str] = None
+        admin_token: Optional[str] = None,
+        allow_private_peers: bool = False
     ):
         super().__init__(server_address, RequestHandlerClass)
         self.ledger = ledger
@@ -52,6 +90,10 @@ class NodeServer(ThreadingHTTPServer):
         self.subscribers: List[queue.Queue] = []
         import os
         self.admin_token = admin_token if admin_token is not None else os.environ.get("OPENBALLOT_ADMIN_TOKEN")
+        self.allow_private_peers = (
+            allow_private_peers
+            or os.environ.get("OPENBALLOT_ALLOW_PRIVATE_PEERS", "").lower() in ("1", "true")
+        )
         if not self.ledger.chain:
             self.ledger.create_genesis_block()
             audit_log.log("GENESIS_CREATED", "Genesis block #0 created with initial proof", "SUCCESS")
@@ -592,7 +634,12 @@ class NodeHandler(BaseHTTPRequestHandler):
             if not self._is_admin_authorized():
                 return self._send_json({"error": "Unauthorized: valid admin token required"}, 401)
             peer = data.get("peer", "").strip()
-            if peer and peer not in self.node.peers:
+            if not peer:
+                return self._send_json({"error": "Missing peer URL"}, 400)
+            valid, err = is_safe_peer_url(peer, allow_private=self.node.allow_private_peers)
+            if not valid:
+                return self._send_json({"error": f"Invalid peer URL: {err}"}, 400)
+            if peer not in self.node.peers:
                 self.node.peers.append(peer)
                 audit_log.log("PEER_ADDED", f"New peer registered: {peer}", "INFO")
             return self._send_json({"peers": self.node.peers})
@@ -627,10 +674,18 @@ class NodeHandler(BaseHTTPRequestHandler):
                 synced_any = False
                 errors = []
                 for peer_url in list(self.node.peers):
+                    valid, err = is_safe_peer_url(peer_url, allow_private=self.node.allow_private_peers)
+                    if not valid:
+                        errors.append(f"{peer_url}: Rejected unsafe peer URL: {err}")
+                        continue
                     try:
                         req_url = f"{peer_url.rstrip('/')}/api/v1/chain"
-                        with urllib.request.urlopen(req_url, timeout=3) as resp:
-                            peer_data = json.loads(resp.read().decode("utf-8"))
+                        req = urllib.request.Request(req_url, headers={"User-Agent": "OpenBallot-Node/1.0"})
+                        with urllib.request.urlopen(req, timeout=5) as resp:
+                            raw = resp.read(MAX_PEER_RESPONSE_BYTES + 1)
+                            if len(raw) > MAX_PEER_RESPONSE_BYTES:
+                                raise ValueError(f"Peer response exceeded {MAX_PEER_RESPONSE_BYTES} bytes limit")
+                            peer_data = json.loads(raw.decode("utf-8"))
                             peer_chain = [Block.from_dict(b) for b in peer_data.get("chain", [])]
                             if self.node.consensus.resolve_conflicts([peer_chain]):
                                 synced_any = True
