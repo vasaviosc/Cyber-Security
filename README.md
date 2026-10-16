@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10+-brightgreen.svg)](pyproject.toml)
-[![Tests: Passing](https://img.shields.io/badge/tests-passing-success.svg)](tests/)
+[![CI](https://github.com/vasaviosc/Cyber-Security/actions/workflows/ci.yml/badge.svg)](https://github.com/vasaviosc/Cyber-Security/actions/workflows/ci.yml)
 
 A lightweight, decentralized, and verifiable cryptographic voting node designed for tamper-evident digital elections and community governance.
 

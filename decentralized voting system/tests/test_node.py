@@ -230,3 +230,113 @@ def test_peer_url_ssrf_validation(running_node):
         assert "Invalid peer URL" in res.get("error", "")
 
 
+def test_sync_rejects_unregistered_voter_on_pushed_chain():
+    # Node with closed registry: only registered voters allowed
+    ledger = Ledger(open_election=False)
+    ledger.create_genesis_block()
+    priv_reg, pub_reg = generate_keypair()
+    reg_voter = public_key_to_hex(pub_reg)
+    ledger.register_voter(reg_voter)
+
+    server = NodeServer(("127.0.0.1", 0), NodeHandler, ledger=ledger, difficulty=1)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+
+    try:
+        # Attacker crafts a longer chain from the node's genesis containing an unregistered voter
+        priv_unreg, pub_unreg = generate_keypair()
+        unreg_voter = public_key_to_hex(pub_unreg)
+        unreg_ballot = Ballot(voter_id=unreg_voter, proposal_id="PROP-INFILTRATE", choice="YES", weight=1)
+        unreg_ballot.signature = sign_message(priv_unreg, unreg_ballot.get_digest()).hex()
+
+        genesis_dict = ledger.chain[0].to_dict()
+        block1 = Block(index=1, prev_hash=ledger.chain[0].hash, ballots=[unreg_ballot])
+        block1.mine(difficulty=1)
+        block2 = Block(index=2, prev_hash=block1.hash, ballots=[])
+        block2.mine(difficulty=1)
+
+        candidate_chain = [genesis_dict, block1.to_dict(), block2.to_dict()]
+        status, response = _post(base_url, "/api/v1/sync", {"chain": candidate_chain})
+
+        assert status == 200
+        assert response["chain_replaced"] is False
+        assert len(ledger.chain) == 1
+        assert ledger.tally("PROP-INFILTRATE") == {}
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_concurrent_mine_requests(running_node):
+    base_url, ledger = running_node
+    import concurrent.futures
+
+    # Cast 4 unique ballots
+    for i in range(4):
+        priv, pub = generate_keypair()
+        vid = public_key_to_hex(pub)
+        ballot = _signed_ballot(priv, vid, proposal_id=f"PROP-CONCURRENT-{i}")
+        status, _ = _post(base_url, "/api/v1/ballots", ballot)
+        assert status == 202
+
+    # Send 10 concurrent /mine requests across multiple threads
+    def mine_worker():
+        s, r = _post(base_url, "/api/v1/mine", {})
+        return s, r
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(mine_worker) for _ in range(8)]
+        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+    # All requests should return 200 without deadlock
+    assert all(status == 200 for status, _ in results)
+
+    # Ballots should all be sealed on the ledger without duplicate counting
+    total_sealed = sum(len(block.ballots) for block in ledger.chain)
+    assert total_sealed == 4
+
+
+def test_secrets_strictly_absent_from_all_api_responses(running_node):
+    base_url, _ = running_node
+
+    # Helper to check no secret_key in text
+    def assert_no_secret_key(raw_bytes: bytes, context: str):
+        text = raw_bytes.decode("utf-8")
+        assert "secret_key" not in text, f"Found secret_key in {context} response: {text}"
+
+    # 1. Health
+    with urllib.request.urlopen(f"{base_url}/health") as resp:
+        assert_no_secret_key(resp.read(), "health")
+
+    # 2. Create Citizen
+    c_status, c_data = _post(base_url, "/api/v1/citizens", {"name": "Security Test Citizen", "district": "District 1"})
+    assert c_status == 201
+    assert "secret_key" not in c_data
+    assert "secret_key" not in c_data.get("citizen", {})
+
+    # 3. Citizens List
+    with urllib.request.urlopen(f"{base_url}/api/v1/citizens") as resp:
+        assert_no_secret_key(resp.read(), "GET /citizens")
+
+    # 4. Bulk Citizens Generation
+    b_status, b_data = _post(base_url, "/api/v1/citizens/bulk", {"count": 3, "district": "Precinct X"})
+    assert b_status == 201
+    for c in b_data.get("citizens", []):
+        assert "secret_key" not in c
+
+    # 5. Voters List
+    with urllib.request.urlopen(f"{base_url}/api/v1/voters") as resp:
+        assert_no_secret_key(resp.read(), "GET /voters")
+
+    # 6. Chain
+    with urllib.request.urlopen(f"{base_url}/api/v1/chain") as resp:
+        assert_no_secret_key(resp.read(), "GET /chain")
+
+    # 7. Mempool
+    with urllib.request.urlopen(f"{base_url}/api/v1/mempool") as resp:
+        assert_no_secret_key(resp.read(), "GET /mempool")
+
+
+
