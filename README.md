@@ -106,19 +106,32 @@ python3 -m openballot.cli tally --proposal "PROP-2026-01" --node "http://127.0.0
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/health` | Node uptime, chain height, mempool count |
-| `POST` | `/api/v1/ballots` | Submit a digitally signed ballot |
+| `GET` | `/metrics` | Prometheus metrics for scraping chain and node performance |
+| `POST` | `/api/v1/ballots` | Submit a digitally signed ballot (O(1) dedup & auto-gossip) |
 | `GET` | `/api/v1/mempool` | Inspect unconfirmed ballots |
-| `POST` | `/api/v1/mine` | Seal mempool into a new block |
+| `POST` | `/api/v1/mine` | Seal mempool into a new block using Merkle root |
 | `GET` | `/api/v1/chain` | Retrieve full blockchain ledger |
-| `GET` | `/api/v1/tally?proposal=<id>` | Calculate verified election tally |
+| `GET` | `/api/v1/snapshot` | Compact state snapshot for fast peer synchronization |
+| `GET` | `/api/v1/tally?proposal=<id>` | Calculate verified election tally (O(1) accumulator) |
 | `POST` | `/api/v1/sync` | Sync and resolve chain forks with peers |
 | `GET` / `POST` | `/api/v1/peers` | View or register peer node URLs |
 
 ---
 
+## High-Performance & Scalability Features
+
+- **$O(1)$ Hash Indexing**: Replaces $O(N)$ linear blockchain scans for duplicate ballot checking, vote verification, and tally generation with constant-time state caches.
+- **Merkle Tree Header Mining**: Decouples block hashing from transaction serialization by computing a cryptographic Merkle root across transactions, reducing PoW iteration overhead by orders of magnitude.
+- **SQLite WAL & Atomic JSON Storage**: Supports ACID-compliant SQLite relational storage with Write-Ahead Logging (`--db-file ledger.db`) alongside atomic tempfile-replace JSON persistence.
+- **Multi-Threaded & ASGI Architecture**: Built on non-blocking multi-threaded request processing (`NodeServer`) with optional enterprise FastAPI + Uvicorn server (`--engine uvicorn`).
+- **Autonomous P2P Gossip**: Incoming ballots and mined blocks are automatically gossiped to connected network peers asynchronously in the background.
+- **Vote Privacy & Commitments**: Provides cryptographic commitment helpers (`create_ballot_commitment`) for secret ballot voting schemes.
+
+---
+
 ## Running Tests
 
-Execute the unit test suite:
+Execute the unit and performance test suite:
 
 ```bash
 pytest -v
@@ -128,14 +141,15 @@ pytest -v
 
 ## Architecture Details
 
-- `openballot/crypto.py`: Ed25519 keypair generation, raw hex serialization, and message signatures.
-- `openballot/ballot.py`: Ballot data structure and signature verification.
-- `openballot/block.py`: Block header, transaction payload serialization, and Proof-of-Work hashing.
-- `openballot/ledger.py`: Genesis state initialization, voter registration, duplicate check, and tally engine.
-- `openballot/mempool.py`: In-memory transaction staging area.
-- `openballot/consensus.py`: Peer chain validation and Nakamoto-style longest-chain conflict resolution.
-- `openballot/node.py`: Embedded HTTP API server.
-- `openballot/cli.py`: Administrative and voter CLI tooling.
+- `openballot/crypto.py`: Ed25519 keypair generation, message signatures, batch verification, and cryptographic commitments.
+- `openballot/ballot.py`: Ballot data structure with anti-replay nonces, timestamps, and commitment support.
+- `openballot/block.py`: Merkle root calculation, block header serialization, and fast Proof-of-Work mining.
+- `openballot/ledger.py`: Genesis state, voter registration, O(1) indexed lookups, atomic JSON and SQLite WAL persistence.
+- `openballot/mempool.py`: Thread-safe, bounded in-memory transaction staging pool with O(1) duplicate checks.
+- `openballot/consensus.py`: Longest-chain resolution, Merkle tree verification, and PoW/PoA consensus engines.
+- `openballot/node.py`: Multi-threaded HTTP daemon with automatic P2P gossip and Prometheus monitoring.
+- `openballot/api_app.py`: High-throughput ASGI FastAPI production application.
+- `openballot/cli.py`: Administrative and voter CLI tooling with engine and storage flags.
 
 ---
 

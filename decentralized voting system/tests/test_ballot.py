@@ -32,3 +32,19 @@ def test_ballot_serialization():
     assert recovered.proposal_id == ballot.proposal_id
     assert recovered.choice == ballot.choice
     assert recovered.signature == ballot.signature
+
+
+def test_ballot_proposal_replay_prevention():
+    priv, pub = generate_keypair()
+    voter_id = public_key_to_hex(pub)
+    
+    # Voter signs ballot for PROP-1
+    ballot1 = Ballot(voter_id=voter_id, proposal_id="PROP-1", choice="YES")
+    sig = sign_message(priv, ballot1.get_digest())
+    ballot1.signature = sig.hex()
+    assert ballot1.verify() is True
+
+    # Attacker tries to use same signature for PROP-2
+    ballot2 = Ballot(voter_id=voter_id, proposal_id="PROP-2", choice="YES", signature=sig.hex())
+    assert ballot2.verify() is False
+

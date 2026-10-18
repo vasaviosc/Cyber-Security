@@ -39,7 +39,10 @@ def main():
     print("\nSample voters:")
     for name, data in keyring.items():
         print(f"  {name.capitalize():<8}: ID={data['voter_id'][:16]}... Secret={data['secret_key'][:16]}...")
+    print("\nTo start an OpenBallot node pre-loaded with these voters, run:")
+    print("  python -m openballot.cli serve --voters sample_voters.json")
 
 
 if __name__ == "__main__":
     main()
+

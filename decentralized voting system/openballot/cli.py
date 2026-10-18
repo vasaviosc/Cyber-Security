@@ -33,6 +33,10 @@ def _post_json(url: str, payload: dict) -> dict:
             return json.loads(err_msg)
         except Exception:
             return {"error": f"HTTP {e.code}: {err_msg}"}
+    except urllib.error.URLError as e:
+        return {"error": f"Failed to connect to node at {url}: {e.reason}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def _get_json(url: str) -> dict:
@@ -46,6 +50,10 @@ def _get_json(url: str) -> dict:
             return json.loads(err_msg)
         except Exception:
             return {"error": f"HTTP {e.code}: {err_msg}"}
+    except urllib.error.URLError as e:
+        return {"error": f"Failed to connect to node at {url}: {e.reason}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def cmd_keygen(args):
@@ -73,7 +81,7 @@ def cmd_vote(args):
     ballot = Ballot(
         voter_id=voter_id,
         proposal_id=args.proposal,
-        choice=args.choice.upper(),
+        choice=args.choice,
         weight=args.weight
     )
     sig = sign_message(priv, ballot.get_digest())
@@ -104,11 +112,83 @@ def cmd_status(args):
     print(json.dumps(res, indent=2))
 
 
+def cmd_register_voter(args):
+    endpoint = f"{args.node.rstrip('/')}/api/v1/voters"
+    res = _post_json(endpoint, {"voter_id": args.voter_id})
+    print("Registration response:", json.dumps(res, indent=2))
+
+
+def cmd_load_voters(args):
+    endpoint = f"{args.node.rstrip('/')}/api/v1/voters"
+    try:
+        with open(args.file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        voter_ids = []
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, dict) and "voter_id" in v:
+                    voter_ids.append(v["voter_id"])
+                else:
+                    voter_ids.append(k)
+        elif isinstance(data, list):
+            for v in data:
+                if isinstance(v, str):
+                    voter_ids.append(v)
+                elif isinstance(v, dict) and "voter_id" in v:
+                    voter_ids.append(v["voter_id"])
+
+        res = _post_json(endpoint, {"voter_ids": voter_ids})
+        print("Voter Batch Load response:", json.dumps(res, indent=2))
+    except Exception as e:
+        print(f"Error reading voter file: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_verify_vote(args):
+    endpoint = f"{args.node.rstrip('/')}/api/v1/ballots/verify?voter_id={args.voter_id}&proposal={args.proposal}"
+    res = _get_json(endpoint)
+    print("Vote Audit Verification:")
+    print(json.dumps(res, indent=2))
+
+
+def cmd_proposals(args):
+    endpoint = f"{args.node.rstrip('/')}/api/v1/proposals"
+    res = _get_json(endpoint)
+    print("Active Proposals Overview:")
+    print(json.dumps(res, indent=2))
+
+
 def cmd_serve(args):
-    ledger = Ledger()
-    ledger.create_genesis_block()
+    if args.db_file:
+        ledger = Ledger.load_from_file(args.db_file)
+    else:
+        ledger = Ledger()
+        ledger.create_genesis_block()
+
+    if args.voters:
+        try:
+            ledger.load_voter_registry_file(args.voters)
+            print(f"[*] Loaded voter registry with {len(ledger.voter_registry)} authorized voters from {args.voters}")
+        except Exception as e:
+            print(f"[!] Warning: Could not load voter file: {e}", file=sys.stderr)
+
+    engine_type = getattr(args, "engine", "standard")
+    if engine_type == "uvicorn":
+        try:
+            import uvicorn
+            import openballot.api_app as api_module
+            from openballot.consensus import ConsensusEngine
+            api_module.ledger = ledger
+            api_module.difficulty = args.difficulty
+            api_module.consensus = ConsensusEngine(ledger=ledger, difficulty=args.difficulty, mode=getattr(args, "mode", "pow"))
+            print(f"[*] Launching OpenBallot high-performance ASGI daemon on http://127.0.0.1:{args.port} (Uvicorn)")
+            uvicorn.run(api_module.app, host="0.0.0.0", port=args.port, log_level="info")
+            return
+        except ImportError:
+            print("[!] Uvicorn not installed, falling back to standard threaded HTTP server.", file=sys.stderr)
+
     server = NodeServer(("0.0.0.0", args.port), NodeHandler, ledger=ledger, difficulty=args.difficulty)
-    print(f"[*] OpenBallot node running on http://127.0.0.1:{args.port} (difficulty={args.difficulty})")
+    print(f"[*] OpenBallot node running on http://127.0.0.1:{args.port} (difficulty={args.difficulty}, threaded=True)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -150,10 +230,38 @@ def main():
     p_status.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
     p_status.set_defaults(func=cmd_status)
 
+    # register-voter
+    p_reg = subparsers.add_parser("register-voter", help="Register a single voter public key")
+    p_reg.add_argument("--voter-id", required=True, help="Voter public key hex string")
+    p_reg.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_reg.set_defaults(func=cmd_register_voter)
+
+    # load-voters
+    p_load_v = subparsers.add_parser("load-voters", help="Load batch of authorized voters from file")
+    p_load_v.add_argument("--file", required=True, help="JSON keyring or array file of voter IDs")
+    p_load_v.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_load_v.set_defaults(func=cmd_load_voters)
+
+    # verify-vote
+    p_verify = subparsers.add_parser("verify-vote", help="Audit and verify inclusion of a ballot")
+    p_verify.add_argument("--voter-id", required=True, help="Voter public key hex string")
+    p_verify.add_argument("--proposal", required=True, help="Proposal ID")
+    p_verify.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_verify.set_defaults(func=cmd_verify_vote)
+
+    # proposals
+    p_props = subparsers.add_parser("proposals", help="List active election proposals")
+    p_props.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_props.set_defaults(func=cmd_proposals)
+
     # serve
     p_serve = subparsers.add_parser("serve", help="Run node HTTP daemon")
     p_serve.add_argument("--port", type=int, default=8000, help="Listen port")
     p_serve.add_argument("--difficulty", type=int, default=1, help="PoW block difficulty")
+    p_serve.add_argument("--db-file", type=str, help="Path to JSON or SQLite (.db) file for persistence")
+    p_serve.add_argument("--voters", type=str, help="Path to voter keyring/registry JSON file")
+    p_serve.add_argument("--engine", choices=["standard", "uvicorn"], default="standard", help="Web server engine")
+    p_serve.add_argument("--mode", choices=["pow", "poa"], default="pow", help="Consensus mode")
     p_serve.set_defaults(func=cmd_serve)
 
     parsed_args = parser.parse_args()
@@ -162,3 +270,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
