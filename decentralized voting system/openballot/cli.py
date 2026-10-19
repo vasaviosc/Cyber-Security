@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 import urllib.request
 import urllib.error
@@ -107,17 +108,53 @@ def cmd_status(args):
 def cmd_serve(args):
     ledger = Ledger()
     ledger.create_genesis_block()
+
+    # Pre-register sample voters if available
+    voters_file = args.voters
+    if voters_file and os.path.exists(voters_file):
+        try:
+            with open(voters_file, "r") as f:
+                voters_data = json.load(f)
+            for name, vinfo in voters_data.items():
+                if isinstance(vinfo, dict) and "voter_id" in vinfo:
+                    ledger.register_voter(vinfo["voter_id"])
+            print(f"[*] Pre-registered {len(ledger.voter_registry)} authorized voters from {voters_file}")
+        except Exception as e:
+            print(f"[!] Warning loading voters file: {e}", file=sys.stderr)
+
     server = NodeServer(("0.0.0.0", args.port), NodeHandler, ledger=ledger, difficulty=args.difficulty)
-    print(f"[*] OpenBallot node running on http://127.0.0.1:{args.port} (difficulty={args.difficulty})")
+    print("=" * 65)
+    print(" HEXANOVA CYBERSECURITY OPERATIONS CENTER (SOC) - OPENBALLOT")
+    print(f" Institution: Vasavi College of Engineering (CSE)")
+    print(f" [*] Daemon Status : ONLINE (0.0.0.0:{args.port})")
+    print(f" [*] PoW Target    : Difficulty {args.difficulty}")
+    print(f" [*] SOC Dashboard : http://127.0.0.1:{args.port}/")
+    print(f" [*] Health Check  : http://127.0.0.1:{args.port}/health")
+    print(f" [*] Security Logs : http://127.0.0.1:{args.port}/api/v1/security/events")
+    print("=" * 65)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n[*] Shutting down node.")
+        print("\n[*] Shutting down node gracefully...")
         server.server_close()
 
 
+def cmd_dashboard(args):
+    import webbrowser
+    url = f"http://127.0.0.1:{args.port}/"
+    print(f"[*] Opening Hexanova Cybersecurity Dashboard: {url}")
+    webbrowser.open(url)
+
+
+def cmd_simulate(args):
+    endpoint = f"{args.node.rstrip('/')}/api/v1/security/simulate"
+    res = _post_json(endpoint, {"type": args.type})
+    print("Simulation Audit Result:")
+    print(json.dumps(res, indent=2))
+
+
 def main():
-    parser = argparse.ArgumentParser(prog="openballot", description="OpenBallot CLI tool")
+    parser = argparse.ArgumentParser(prog="openballot", description="OpenBallot CLI & SOC Security Daemon")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # keygen
@@ -151,10 +188,22 @@ def main():
     p_status.set_defaults(func=cmd_status)
 
     # serve
-    p_serve = subparsers.add_parser("serve", help="Run node HTTP daemon")
+    p_serve = subparsers.add_parser("serve", help="Run node HTTP daemon & SOC Dashboard")
     p_serve.add_argument("--port", type=int, default=8000, help="Listen port")
     p_serve.add_argument("--difficulty", type=int, default=1, help="PoW block difficulty")
+    p_serve.add_argument("--voters", type=str, default=None, help="Path to initial voters JSON file")
     p_serve.set_defaults(func=cmd_serve)
+
+    # dashboard
+    p_dash = subparsers.add_parser("dashboard", help="Launch the Cybersecurity Dashboard in browser")
+    p_dash.add_argument("--port", type=int, default=8000, help="Node listen port")
+    p_dash.set_defaults(func=cmd_dashboard)
+
+    # simulate
+    p_sim = subparsers.add_parser("simulate", help="Run a security attack simulation on the SOC node")
+    p_sim.add_argument("--type", choices=["signature_tamper", "double_vote", "fork_poisoning"], default="signature_tamper", help="Attack simulation type")
+    p_sim.add_argument("--node", default="http://127.0.0.1:8000", help="Node URL")
+    p_sim.set_defaults(func=cmd_simulate)
 
     parsed_args = parser.parse_args()
     parsed_args.func(parsed_args)

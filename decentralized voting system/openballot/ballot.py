@@ -11,19 +11,28 @@ class Ballot:
         self.signature = signature.strip()
         self.weight = int(weight)
 
-    def get_digest(self) -> bytes:
-        # Serialized data to sign
-        # Note: proposal binding handled at routing layer
-        payload = f"{self.voter_id}:{self.choice}:{self.weight}"
+    def get_digest(self, legacy: bool = False) -> bytes:
+        # Cryptographic digest of ballot contents
+        # Securely binds proposal_id, voter_id, choice, and weight to eliminate cross-proposal replay attacks
+        if legacy:
+            payload = f"{self.voter_id}:{self.choice}:{self.weight}"
+        else:
+            payload = f"{self.proposal_id}:{self.voter_id.lower()}:{self.choice}:{self.weight}"
         return hashlib.sha256(payload.encode("utf-8")).digest()
 
     def verify(self) -> bool:
-        if not self.signature or not self.voter_id:
+        if not self.signature or not self.voter_id or not self.proposal_id:
+            return False
+        if self.weight <= 0:
             return False
         try:
             pubkey = public_key_from_hex(self.voter_id)
             sig_bytes = bytes.fromhex(self.signature)
-            return verify_signature(pubkey, sig_bytes, self.get_digest())
+            # 1. Try modern proposal-bound digest
+            if verify_signature(pubkey, sig_bytes, self.get_digest(legacy=False)):
+                return True
+            # 2. Backward compatibility fallback for legacy ballots
+            return verify_signature(pubkey, sig_bytes, self.get_digest(legacy=True))
         except Exception:
             return False
 
@@ -39,10 +48,10 @@ class Ballot:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Ballot":
         return cls(
-            voter_id=data.get("voter_id", ""),
-            proposal_id=data.get("proposal_id", ""),
-            choice=data.get("choice", ""),
-            signature=data.get("signature", ""),
+            voter_id=str(data.get("voter_id", "")).strip(),
+            proposal_id=str(data.get("proposal_id", "")).strip(),
+            choice=str(data.get("choice", "")).strip(),
+            signature=str(data.get("signature", "")).strip(),
             weight=int(data.get("weight", 1))
         )
 

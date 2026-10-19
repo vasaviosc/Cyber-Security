@@ -49,3 +49,33 @@ def test_conflict_resolution_honest_fork():
     result = engine_a.resolve_conflicts([ledger_b.chain])
     assert result is True
     assert len(ledger_a.chain) == 3
+
+
+def test_chain_validation_invalid_genesis():
+    ledger = Ledger()
+    # Bad genesis block
+    bad_genesis = Block(index=5, prev_hash="bad_prev", ballots=[], nonce=0)
+    engine = ConsensusEngine(ledger=ledger, difficulty=1)
+    assert engine.is_valid_chain([bad_genesis]) is False
+
+
+def test_chain_validation_non_sequential_index():
+    ledger = Ledger()
+    genesis = ledger.create_genesis_block()
+    engine = ConsensusEngine(ledger=ledger, difficulty=1)
+
+    # Block skips index 1 and claims index 3
+    b = Block(index=3, prev_hash=genesis.hash, ballots=[])
+    b.mine(difficulty=1)
+    assert engine.is_valid_chain([genesis, b]) is False
+
+
+def test_chain_validation_timestamp_chronology():
+    ledger = Ledger()
+    genesis = ledger.create_genesis_block()
+    engine = ConsensusEngine(ledger=ledger, difficulty=1)
+
+    # Block with timestamp earlier than genesis
+    b = Block(index=1, prev_hash=genesis.hash, ballots=[], timestamp=genesis.timestamp - 100)
+    b.mine(difficulty=1)
+    assert engine.is_valid_chain([genesis, b]) is False

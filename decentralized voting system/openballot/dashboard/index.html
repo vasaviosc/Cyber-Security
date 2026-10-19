@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hexanova SOC — OpenBallot Cybersecurity Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300f2fe'><path d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z'/></svg>">
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header class="soc-header">
+    <div class="brand-section">
+      <div class="brand-logo-glow">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v5.7c0 4.67-3.13 9.01-7 10.15-3.87-1.14-7-5.48-7-10.15V6.3l7-3.12zM11 7h2v6h-2zm0 8h2v2h-2z"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>HEXANOVA SOC <span class="brand-badge">OpenBallot v0.2.1</span></h1>
+        <p>Vasavi College of Engineering • Dept. of CSE</p>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <div id="connectionPill" class="connection-pill">
+        <div class="pulse-dot"></div>
+        <span id="connectionText">CONNECTING...</span>
+      </div>
+
+      <div class="node-url-badge" title="Active Node Daemon URL">
+        <span id="displayNodeUrl">http://127.0.0.1:8000</span>
+      </div>
+
+      <div class="refresh-control">
+        <select id="pollIntervalSelect" class="refresh-select" title="Auto Refresh Frequency">
+          <option value="2000">Poll: 2s</option>
+          <option value="5000" selected>Poll: 5s</option>
+          <option value="10000">Poll: 10s</option>
+          <option value="0">Manual</option>
+        </select>
+        <button id="btnManualRefresh" class="btn-icon" title="Refresh Now">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Offline Disconnection Banner -->
+  <div id="offlineBanner" class="offline-banner hidden">
+    <span>⚠️ <strong>Node Connection Lost:</strong> Unable to connect to OpenBallot daemon. Ensure node is running (<code>python -m openballot.cli serve --port 8000</code>). Retrying...</span>
+    <button id="btnRetryConnection" class="btn-secondary" style="padding: 2px 10px;">Retry Now</button>
+  </div>
+
+  <main class="dashboard-container">
+
+    <!-- KPI Telemetry Cards Row -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Blockchain Height</span>
+          <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+        </div>
+        <div id="kpiBlockHeight" class="kpi-value text-cyan">--</div>
+        <div class="kpi-footer">
+          <span>Latest block index:</span> <span id="kpiLatestIndex" class="font-mono text-cyan">#0</span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Mempool Backlog</span>
+          <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+        <div id="kpiMempoolSize" class="kpi-value text-amber">--</div>
+        <div class="kpi-footer">
+          <span id="kpiMempoolStatus">Unconfirmed ballots awaiting seal</span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Confirmed Ballots</span>
+          <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        </div>
+        <div id="kpiTotalBallots" class="kpi-value text-emerald">--</div>
+        <div class="kpi-footer">
+          <span>Cryptographically validated & sealed</span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Security Posture</span>
+          <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        </div>
+        <div id="kpiSecurityStatus" class="kpi-value text-emerald">HEALTHY</div>
+        <div class="kpi-footer">
+          <span id="kpiThreatCounts">0 Threats Detected</span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Mining Difficulty</span>
+          <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </div>
+        <div id="kpiDifficulty" class="kpi-value text-cyan">--</div>
+        <div class="kpi-footer">
+          <span>Target: <code id="kpiTargetPrefix">0x0...</code></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" data-tab="tabOverview">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+        SOC Overview
+      </button>
+      <button class="tab-btn" data-tab="tabExplorer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+        Blockchain Explorer <span id="tabBadgeBlocks" class="badge">0</span>
+      </button>
+      <button class="tab-btn" data-tab="tabMempool">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        Mempool Backlog <span id="tabBadgeMempool" class="badge">0</span>
+      </button>
+      <button class="tab-btn" data-tab="tabTallies">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"></path></svg>
+        Referendums & Tallies
+      </button>
+      <button class="tab-btn" data-tab="tabSecurity">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        SOC Threat Log <span id="tabBadgeAlerts" class="badge">0</span>
+      </button>
+      <button class="tab-btn" data-tab="tabOperations">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+        Command & Simulation Center
+      </button>
+      <button class="tab-btn" data-tab="tabTeam">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Team Hexanova
+      </button>
+    </nav>
+
+    <!-- ==================== TAB 1: OVERVIEW ==================== -->
+    <div id="tabOverview" class="tab-content active">
+      <div class="soc-grid">
+        <div class="panel-card">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M18 17l-5-5-4 4-6-6"/></svg>
+              Blockchain Growth & Velocity
+            </h2>
+            <span class="font-mono text-cyan" id="overviewBlockCount">Height: 1</span>
+          </div>
+          <div id="blockchainVelocityChart" class="chart-container">
+            <!-- Dynamic SVG Bars populated by JS -->
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              Cryptographic Health Checklist
+            </h2>
+          </div>
+          <div class="security-posture-list">
+            <div class="posture-item">
+              <span class="posture-label">Chain Consensus Linkage</span>
+              <span id="postureConsensus" class="status-badge badge-green">VERIFIED</span>
+            </div>
+            <div class="posture-item">
+              <span class="posture-label">Ed25519 Proposal Binding</span>
+              <span id="postureSignature" class="status-badge badge-green">ACTIVE</span>
+            </div>
+            <div class="posture-item">
+              <span class="posture-label">Mempool Replay Guard</span>
+              <span id="postureDoubleVote" class="status-badge badge-green">ENFORCED</span>
+            </div>
+            <div class="posture-item">
+              <span class="posture-label">Voter ID Case Normalization</span>
+              <span id="postureCaseNorm" class="status-badge badge-green">CANONICAL</span>
+            </div>
+            <div class="posture-item">
+              <span class="posture-label">CORS & Preflight Compliance</span>
+              <span id="postureCORS" class="status-badge badge-green">ENABLED</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Recent Security Events Feed -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            Recent Security & Ledger Activity
+          </h2>
+          <button class="btn-secondary" onclick="document.querySelector('[data-tab=\'tabSecurity\']').click()">View Full Threat Log →</button>
+        </div>
+        <div id="overviewRecentEvents" class="event-timeline" style="max-height: 240px;">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 2: EXPLORER ==================== -->
+    <div id="tabExplorer" class="tab-content">
+      <div class="panel-card">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+            Immutable Blockchain Ledger
+          </h2>
+          <div class="panel-actions">
+            <input type="text" id="explorerSearchInput" class="form-input" placeholder="Search block index or hash..." style="padding: 0.35rem 0.65rem; font-size: 0.75rem;">
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="soc-table">
+            <thead>
+              <tr>
+                <th>Index</th>
+                <th>Block Hash</th>
+                <th>Previous Hash</th>
+                <th>Ballots</th>
+                <th>PoW Nonce</th>
+                <th>Timestamp</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="explorerTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Selected Block Modal / Detail View -->
+      <div id="blockDetailPanel" class="panel-card" style="margin-top: 1.5rem; display: none;">
+        <div class="panel-header">
+          <h3 id="blockDetailTitle" class="panel-title">Block Details</h3>
+          <button class="btn-secondary" onclick="document.getElementById('blockDetailPanel').style.display='none'">Close</button>
+        </div>
+        <div id="blockDetailContent" class="action-result" style="max-height: 350px;"></div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 3: MEMPOOL ==================== -->
+    <div id="tabMempool" class="tab-content">
+      <div class="panel-card">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Unconfirmed Transactions Queue (Mempool)
+          </h2>
+          <div class="panel-actions">
+            <button id="btnMineMempool" class="btn-primary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+              Mine Pending Ballots
+            </button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="soc-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Voter ID (Public Key)</th>
+                <th>Proposal</th>
+                <th>Choice</th>
+                <th>Weight</th>
+                <th>Cryptographic Signature</th>
+                <th>Integrity</th>
+              </tr>
+            </thead>
+            <tbody id="mempoolTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 4: TALLIES ==================== -->
+    <div id="tabTallies" class="tab-content">
+      <div class="panel-card">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"></path></svg>
+            Cryptographically Verified Referendum Tallies
+          </h2>
+          <div class="panel-actions">
+            <select id="proposalSelect" class="form-select" style="padding: 0.35rem 0.65rem; font-size: 0.75rem;">
+              <option value="">Loading proposals...</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="tallyDisplayContainer" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 0.5rem;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 5: SOC THREAT LOG ==================== -->
+    <div id="tabSecurity" class="tab-content">
+      <div class="panel-card">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            SOC Cyber Threat & Security Audit Stream
+          </h2>
+          <span id="threatLogSummary" class="font-mono text-cyan">Total Events: 0</span>
+        </div>
+
+        <div class="event-filters">
+          <button class="filter-btn active" data-severity="ALL">All Severities</button>
+          <button class="filter-btn" data-severity="CRITICAL">🔴 Critical (<span id="countCrit">0</span>)</button>
+          <button class="filter-btn" data-severity="SUSPICIOUS">🟠 Suspicious (<span id="countSusp">0</span>)</button>
+          <button class="filter-btn" data-severity="WARNING">🟡 Warning (<span id="countWarn">0</span>)</button>
+          <button class="filter-btn" data-severity="INFO">🔵 Info (<span id="countInfo">0</span>)</button>
+        </div>
+
+        <div id="securityEventsTimeline" class="event-timeline">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 6: COMMAND & SIMULATION CENTER ==================== -->
+    <div id="tabOperations" class="tab-content">
+      <div class="form-grid">
+
+        <!-- Tool 1: Keypair Generator -->
+        <div class="action-card">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="7" r="4"></circle><path d="M10.5 10.5L20 20M16 16l2-2M18 18l2-2"></path></svg>
+            Ed25519 Key Generator
+          </h3>
+          <p style="font-size: 0.75rem; color: var(--text-secondary);">
+            Generate cryptographically secure Ed25519 keypairs for voter registration and ballot signing.
+          </p>
+          <button id="btnGenerateKey" class="btn-primary">Generate Voter Keypair</button>
+          <div class="form-group">
+            <label>Voter ID (Public Key Hex):</label>
+            <input type="text" id="genVoterId" class="form-input" readonly placeholder="Click Generate above...">
+          </div>
+          <div class="form-group">
+            <label>Secret Key (Private Key Hex):</label>
+            <input type="text" id="genSecretKey" class="form-input" readonly placeholder="Private key...">
+          </div>
+          <button id="btnUseKeyInVote" class="btn-secondary" style="display: none;">Use Key in Voting Form ↓</button>
+        </div>
+
+        <!-- Tool 2: Cast Signed Ballot -->
+        <div class="action-card">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            Cast Digitally Signed Ballot
+          </h3>
+          <div class="form-group">
+            <label>Proposal ID:</label>
+            <input type="text" id="voteProposalInput" class="form-input" value="PROP-2026-01">
+          </div>
+          <div class="form-group">
+            <label>Voter Secret Key (Private Hex):</label>
+            <input type="text" id="voteSecretKeyInput" class="form-input" placeholder="e.g. 64-char private key">
+          </div>
+          <div style="display: flex; gap: 0.75rem;">
+            <div class="form-group" style="flex: 1;">
+              <label>Choice:</label>
+              <select id="voteChoiceInput" class="form-select">
+                <option value="YES">YES</option>
+                <option value="NO">NO</option>
+                <option value="ABSTAIN">ABSTAIN</option>
+              </select>
+            </div>
+            <div class="form-group" style="width: 80px;">
+              <label>Weight:</label>
+              <input type="number" id="voteWeightInput" class="form-input" value="1" min="1">
+            </div>
+          </div>
+          <button id="btnSubmitVote" class="btn-primary">Sign & Submit Ballot</button>
+          <div id="voteActionResult" class="action-result" style="display: none;"></div>
+        </div>
+
+        <!-- Tool 3: PoW Block Miner -->
+        <div class="action-card">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            Proof-of-Work Block Miner
+          </h3>
+          <p style="font-size: 0.75rem; color: var(--text-secondary);">
+            Seal all pending mempool transactions into a new cryptographic block using Proof-of-Work consensus.
+          </p>
+          <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+            <span>Pending Mempool: <strong id="minerPendingCount" class="text-amber">0</strong></span>
+            <span>Target Difficulty: <strong id="minerDifficulty" class="text-cyan">1</strong></span>
+          </div>
+          <button id="btnMineBlockOp" class="btn-primary">Start Mining Block</button>
+          <div id="mineActionResult" class="action-result" style="display: none;"></div>
+        </div>
+
+        <!-- Tool 4: Cybersecurity Attack Simulator -->
+        <div class="action-card" style="border-color: rgba(239, 68, 68, 0.3);">
+          <h3 style="color: var(--accent-crimson);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            SOC Attack Simulator & Defense Verifier
+          </h3>
+          <p style="font-size: 0.75rem; color: var(--text-secondary);">
+            Safely test the node's cryptographic and consensus defenses against known cyber attack vectors.
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <button id="btnSimulateTamper" class="btn-danger btn-primary">
+              Test Attack: Forged Signature Injection
+            </button>
+            <button id="btnSimulateDoubleVote" class="btn-danger btn-primary">
+              Test Attack: Mempool Double-Vote Replay
+            </button>
+            <button id="btnSimulateForkPoison" class="btn-danger btn-primary">
+              Test Attack: Rogue Peer Fork Poisoning
+            </button>
+          </div>
+          <div id="simActionResult" class="action-result" style="display: none;"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== TAB 7: TEAM HEXANOVA ==================== -->
+    <div id="tabTeam" class="tab-content">
+      <div class="panel-card" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+            Project & Academic Affiliation
+          </h2>
+        </div>
+        <div style="padding: 0.5rem 0; font-size: 0.85rem; line-height: 1.7;">
+          <p><strong>Project Name:</strong> Cyber-Security Dashboard (OpenBallot SOC)</p>
+          <p><strong>Team Name:</strong> HEXANOVA</p>
+          <p><strong>Institution:</strong> Vasavi College of Engineering, Hyderabad</p>
+          <p><strong>Department:</strong> Department of Computer Science and Engineering (CSE)</p>
+          <p><strong>Team Size:</strong> 3 members</p>
+          <p><strong>Core Focus:</strong> Decentralized voting ledger, Ed25519 cryptographic ballot signatures, Proof-of-Work Nakamoto consensus, mempool double-voting prevention, and Security Operations Center (SOC) telemetry.</p>
+        </div>
+      </div>
+
+      <div class="team-grid">
+        <div class="team-card">
+          <div class="member-avatar">VV</div>
+          <div class="member-info">
+            <h4>Vishnu Vardhan</h4>
+            <p>Roll No: 1602-25-733-064</p>
+            <p>Computer Science and Engineering</p>
+          </div>
+        </div>
+
+        <div class="team-card">
+          <div class="member-avatar">SV</div>
+          <div class="member-info">
+            <h4>Sri Vatsav</h4>
+            <p>Roll No: 1602-25-733-052</p>
+            <p>Computer Science and Engineering</p>
+          </div>
+        </div>
+
+        <div class="team-card">
+          <div class="member-avatar">TE</div>
+          <div class="member-info">
+            <h4>Teja</h4>
+            <p>Roll No: 1602-25-733-056</p>
+            <p>Computer Science and Engineering</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- SOC Footer -->
+  <footer class="soc-footer">
+    <div>
+      <span>Hexanova OpenBallot SOC Security System • Vasavi College of Engineering</span>
+    </div>
+    <div class="footer-links">
+      <a href="/api/v1/health" target="_blank">Health API</a>
+      <a href="/api/v1/chain" target="_blank">Ledger Chain</a>
+      <a href="/api/v1/mempool" target="_blank">Mempool</a>
+      <a href="/api/v1/security/events" target="_blank">Threat Events</a>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

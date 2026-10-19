@@ -14,11 +14,11 @@ class Block:
         timestamp: float = None,
         nonce: int = 0
     ):
-        self.index = index
-        self.prev_hash = prev_hash
+        self.index = int(index)
+        self.prev_hash = str(prev_hash)
         self.ballots = ballots
-        self.timestamp = timestamp if timestamp is not None else time.time()
-        self.nonce = nonce
+        self.timestamp = round(float(timestamp), 4) if timestamp is not None else round(time.time(), 4)
+        self.nonce = int(nonce)
         self.hash = self.compute_hash()
 
     def compute_hash(self) -> str:
@@ -38,6 +38,14 @@ class Block:
             self.nonce += 1
             self.hash = self.compute_hash()
 
+    def has_ballot(self, proposal_id: str, voter_id: str) -> bool:
+        norm_voter = voter_id.strip().lower()
+        norm_prop = proposal_id.strip()
+        return any(
+            b.proposal_id.strip() == norm_prop and b.voter_id.strip().lower() == norm_voter
+            for b in self.ballots
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "index": self.index,
@@ -52,13 +60,13 @@ class Block:
     def from_dict(cls, data: Dict[str, Any]) -> "Block":
         ballots = [Ballot.from_dict(b) for b in data.get("ballots", [])]
         blk = cls(
-            index=data["index"],
-            prev_hash=data["prev_hash"],
+            index=int(data["index"]),
+            prev_hash=str(data["prev_hash"]),
             ballots=ballots,
-            timestamp=data["timestamp"],
-            nonce=data["nonce"]
+            timestamp=float(data["timestamp"]),
+            nonce=int(data.get("nonce", 0))
         )
-        blk.hash = data.get("hash", blk.compute_hash())
+        blk.hash = str(data.get("hash", blk.compute_hash()))
         return blk
 
     def __repr__(self) -> str:
